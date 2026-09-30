@@ -9,7 +9,7 @@ import dev.shadowsoffire.hostilenetworks.HostileNetworks;
 import dev.shadowsoffire.hostilenetworks.data.DataModel;
 import dev.shadowsoffire.hostilenetworks.data.DataModelRegistry;
 import dev.shadowsoffire.hostilenetworks.item.DataModelItem;
-import dev.shadowsoffire.placebo.reload.DynamicHolder;
+import dev.shadowsoffire.placebo.dynreg.DynamicHolder;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.ingredients.subtypes.ISubtypeInterpreter;
@@ -19,13 +19,13 @@ import mezz.jei.api.registration.IRecipeCategoryRegistration;
 import mezz.jei.api.registration.IRecipeRegistration;
 import mezz.jei.api.registration.ISubtypeRegistration;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 
 @JeiPlugin
 public class HostileJeiPlugin implements IModPlugin {
 
-    public static final ResourceLocation UID = HostileNetworks.loc("plugin");
+    public static final Identifier UID = HostileNetworks.loc("plugin");
 
     @Override
     public void registerItemSubtypes(ISubtypeRegistration reg) {
@@ -84,7 +84,6 @@ public class HostileJeiPlugin implements IModPlugin {
             return DataModelItem.getStoredModel(stack);
         }
 
-        @Override
         public String getLegacyStringSubtypeInfo(ItemStack stack, UidContext context) {
             DynamicHolder<DataModel> dm = DataModelItem.getStoredModel(stack);
             if (!dm.isBound()) return "NULL";
@@ -94,7 +93,7 @@ public class HostileJeiPlugin implements IModPlugin {
     }
 
     @Override
-    public ResourceLocation getPluginUid() {
+    public Identifier getPluginUid() {
         return UID;
     }
 

@@ -9,15 +9,13 @@ import dev.shadowsoffire.hostilenetworks.tile.SimChamberTileEntity.FailureState;
 import dev.shadowsoffire.hostilenetworks.util.FabSelection;
 import dev.shadowsoffire.hostilenetworks.util.FabSelection.ProductionMode;
 import dev.shadowsoffire.hostilenetworks.util.RedstoneState;
-import dev.shadowsoffire.placebo.menu.BlockEntityMenu;
-import dev.shadowsoffire.placebo.menu.FilteredSlot;
-import dev.shadowsoffire.placebo.reload.DynamicHolder;
+import dev.shadowsoffire.placebo.dynreg.DynamicHolder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
-public class DataCenterMenu extends BlockEntityMenu<DataCenterTileEntity> {
+public class DataCenterMenu extends HostileBlockEntityMenu<DataCenterTileEntity> {
 
     public static final int REDSTONE_BASE = 2000;
 
@@ -79,7 +77,7 @@ public class DataCenterMenu extends BlockEntityMenu<DataCenterTileEntity> {
 
     @Override
     public boolean stillValid(Player pPlayer) {
-        return pPlayer.level().getBlockState(this.pos).is(Hostile.Blocks.DATA_CENTER);
+        return super.stillValid(pPlayer) && pPlayer.level().getBlockState(this.pos).is(Hostile.Blocks.DATA_CENTER);
     }
 
     @Override

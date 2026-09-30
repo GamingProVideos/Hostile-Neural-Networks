@@ -27,7 +27,7 @@ public class DisplayableBlock {
     public DisplayableBlock(Holder<Block> block, ItemStack displayStack) {
         this.block = block;
         this.displayStack = displayStack.copyWithCount(1);
-        Preconditions.checkArgument(!this.displayStack.isEmpty(), "Display stack for block %s cannot be empty", block.getKey().location());
+        Preconditions.checkArgument(!this.displayStack.isEmpty(), "Display stack for block %s cannot be empty", block.getKey().identifier());
     }
 
     public DisplayableBlock(Holder<Block> block) {

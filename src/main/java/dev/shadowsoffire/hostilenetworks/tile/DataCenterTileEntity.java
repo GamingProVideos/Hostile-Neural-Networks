@@ -23,13 +23,13 @@ import dev.shadowsoffire.hostilenetworks.util.FabSelection;
 import dev.shadowsoffire.hostilenetworks.util.FabSelection.ProductionMode;
 import dev.shadowsoffire.hostilenetworks.util.RedstoneState;
 import dev.shadowsoffire.placebo.block_entity.TickingBlockEntity;
-import dev.shadowsoffire.placebo.cap.InternalItemHandler;
-import dev.shadowsoffire.placebo.cap.ModifiableEnergyStorage;
+import dev.shadowsoffire.hostilenetworks.util.MachineItemHandler;
+import dev.shadowsoffire.hostilenetworks.util.ModifiableEnergyStorage;
 import dev.shadowsoffire.placebo.menu.SimpleDataSlots;
 import dev.shadowsoffire.placebo.menu.SimpleDataSlots.IDataAutoRegister;
 import dev.shadowsoffire.placebo.network.VanillaPacketDispatcher;
-import dev.shadowsoffire.placebo.reload.DynamicHolder;
-import net.minecraft.Util;
+import dev.shadowsoffire.placebo.dynreg.DynamicHolder;
+import net.minecraft.util.Util;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
@@ -42,7 +42,7 @@ import net.minecraft.nbt.NumericTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.inventory.DataSlot;
@@ -51,6 +51,8 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.neoforged.neoforge.common.world.chunk.TicketHelper;
 import net.neoforged.neoforge.common.world.chunk.TicketSet;
 import net.neoforged.neoforge.energy.IEnergyStorage;
@@ -232,7 +234,7 @@ public class DataCenterTileEntity extends BlockEntity implements TickingBlockEnt
             float accuracy = inst.getAccuracy();
             int floor = (int) accuracy;
             float frac = accuracy - floor;
-            this.predictionSuccess[i] = floor + (level.random.nextFloat() < frac ? 1 : 0);
+            this.predictionSuccess[i] = floor + (level.getRandom().nextFloat() < frac ? 1 : 0);
             this.failStates[i] = FailureState.NONE;
             return true;
         }
@@ -455,7 +457,7 @@ public class DataCenterTileEntity extends BlockEntity implements TickingBlockEnt
         for (int cx = minCX; cx <= maxCX; cx++) {
             for (int cz = minCZ; cz <= maxCZ; cz++) {
                 if (cx == ourCX && cz == ourCZ) continue;
-                needed.add(ChunkPos.asLong(cx, cz));
+                needed.add(ChunkPos.pack(cx, cz));
             }
         }
         return needed;
@@ -473,10 +475,10 @@ public class DataCenterTileEntity extends BlockEntity implements TickingBlockEnt
             }
             DataCenterShell.Layout layout = DataCenterShell.findFor(owner, state, level).orElse(null);
             Set<Long> needed = computeNeededShellChunks(layout, owner);
-            for (long chunk : tickets.nonTicking()) {
+            for (long chunk : tickets.normal()) {
                 if (!needed.contains(chunk)) helper.removeTicket(owner, chunk, false);
             }
-            for (long chunk : tickets.ticking()) {
+            for (long chunk : tickets.naturalSpawning()) {
                 if (!needed.contains(chunk)) helper.removeTicket(owner, chunk, true);
             }
         }
@@ -555,6 +557,8 @@ public class DataCenterTileEntity extends BlockEntity implements TickingBlockEnt
         return this.energy;
     }
 
+    public ModifiableEnergyStorage getEnergyHandler() { return this.energy; }
+
     public int getEnergyStored() {
         return this.energy.getEnergyStored();
     }
@@ -591,45 +595,47 @@ public class DataCenterTileEntity extends BlockEntity implements TickingBlockEnt
     }
 
     @Override
-    public void saveAdditional(CompoundTag tag, HolderLookup.Provider regs) {
-        super.saveAdditional(tag, regs);
-        tag.put("inventory", this.inventory.serializeNBT(regs));
-        tag.putInt("energy", this.energy.getEnergyStored());
-        tag.put("runtimes", writeIntArray(this.runtimes));
-        tag.put("predSuccess", writeIntArray(this.predictionSuccess));
-        tag.put("failStates", writeIntArray(Arrays.stream(this.failStates).mapToInt(Enum::ordinal).toArray()));
-        tag.putInt("redstoneState", this.redstoneState.ordinal());
-        tag.putByte("ejectDirIndex", this.ejectDirIndex);
-        tag.put("saved_selections", this.writeSelections(new CompoundTag()));
+    public void preRemoveSideEffects(BlockPos pos, BlockState state) {
+        if (this.level != null && !this.level.isClientSide()) {
+            net.minecraft.world.Containers.dropContents(this.level, pos, this.inventory.copyToList());
+            this.clearPortOwnersOnBreak();
+        }
+        super.preRemoveSideEffects(pos, state);
+    }
+
+    @Override
+    protected void saveAdditional(ValueOutput output) {
+        super.saveAdditional(output);
+        this.inventory.serialize(output.child("inventory"));
+        output.putInt("energy", this.energy.getEnergyStored());
+        output.putIntArray("runtimes", this.runtimes);
+        output.putIntArray("predSuccess", this.predictionSuccess);
+        output.putIntArray("failStates", Arrays.stream(this.failStates).mapToInt(Enum::ordinal).toArray());
+        output.putInt("redstoneState", this.redstoneState.ordinal());
+        output.putByte("ejectDirIndex", this.ejectDirIndex);
+        output.store("saved_selections", CompoundTag.CODEC, this.writeSelections(new CompoundTag()));
         // forcedChunks is not persisted; the ticket controller persists tickets itself + validateLoadedTickets reconciles.
     }
 
     @Override
-    public void loadAdditional(CompoundTag tag, HolderLookup.Provider regs) {
-        super.loadAdditional(tag, regs);
-        this.inventory.deserializeNBT(regs, tag.getCompound("inventory"));
-        this.energy.setEnergy(tag.getInt("energy"));
-        readIntArray(tag.getList("runtimes", Tag.TAG_INT), this.runtimes);
-        readIntArray(tag.getList("predSuccess", Tag.TAG_INT), this.predictionSuccess);
-        int i = 0;
-        for (Tag t : tag.getList("failStates", Tag.TAG_INT)) {
-            this.failStates[i++] = FailureState.BY_ID.apply(((NumericTag) t).getAsInt());
+    protected void loadAdditional(ValueInput input) {
+        super.loadAdditional(input);
+        this.inventory.deserialize(input.childOrEmpty("inventory"));
+        this.energy.setEnergy(input.getIntOr("energy", 0));
+        copyIntArray(input.getIntArray("runtimes").orElseGet(() -> new int[0]), this.runtimes);
+        copyIntArray(input.getIntArray("predSuccess").orElseGet(() -> new int[0]), this.predictionSuccess);
+        int[] failures = input.getIntArray("failStates").orElseGet(() -> new int[0]);
+        for (int i = 0; i < this.failStates.length; i++) {
+            this.failStates[i] = FailureState.BY_ID.apply(i < failures.length ? failures[i] : 0);
         }
-        this.redstoneState = RedstoneState.values()[tag.getInt("redstoneState")];
-        this.ejectDirIndex = tag.getByte("ejectDirIndex");
-        this.readSelections(tag.getCompound("saved_selections"));
+        this.redstoneState = RedstoneState.values()[Mth.clamp(input.getIntOr("redstoneState", 0), 0, RedstoneState.values().length - 1)];
+        this.ejectDirIndex = input.getByteOr("ejectDirIndex", (byte) 0);
+        this.readSelections(input.read("saved_selections", CompoundTag.CODEC).orElseGet(CompoundTag::new));
     }
 
-    private static ListTag writeIntArray(int[] src) {
-        ListTag list = new ListTag();
-        for (int v : src) list.add(IntTag.valueOf(v));
-        return list;
-    }
-
-    private static void readIntArray(ListTag list, int[] dest) {
-        int n = Math.min(list.size(), dest.length);
-        for (int i = 0; i < n; i++) dest[i] = list.getInt(i);
-        for (int i = n; i < dest.length; i++) dest[i] = 0;
+    private static void copyIntArray(int[] src, int[] dest) {
+        Arrays.fill(dest, 0);
+        System.arraycopy(src, 0, dest, 0, Math.min(src.length, dest.length));
     }
 
     @Override
@@ -647,8 +653,8 @@ public class DataCenterTileEntity extends BlockEntity implements TickingBlockEnt
     }
 
     @Override
-    public void onDataPacket(Connection net, ClientboundBlockEntityDataPacket pkt, HolderLookup.Provider regs) {
-        this.readSyncTag(pkt.getTag());
+    public void onDataPacket(Connection net, ValueInput input) {
+        this.readSyncTag(input);
     }
 
     @Override
@@ -663,16 +669,20 @@ public class DataCenterTileEntity extends BlockEntity implements TickingBlockEnt
 
     /** Vanilla's default just calls loadAdditional which ignores the sync-only keys getUpdateTag wrote. */
     @Override
-    public void handleUpdateTag(CompoundTag tag, HolderLookup.Provider regs) {
-        super.handleUpdateTag(tag, regs);
-        this.readSyncTag(tag);
+    public void handleUpdateTag(ValueInput input) {
+        this.readSyncTag(input);
     }
 
-    private void readSyncTag(CompoundTag tag) {
-        this.readSelections(tag.getCompound("saved_selections"));
-        this.activeSlotsMask = tag.getInt("activeMask");
-        this.shellValid = tag.getBoolean("shellValid");
-        this.cachedLayout = DataCenterShell.Layout.readLayout(tag, this.worldPosition);
+    private void readSyncTag(ValueInput input) {
+        this.readSelections(input.read("saved_selections", CompoundTag.CODEC).orElseGet(CompoundTag::new));
+        this.activeSlotsMask = input.getIntOr("activeMask", 0);
+        this.shellValid = input.getBooleanOr("shellValid", false);
+        CompoundTag layout = new CompoundTag();
+        input.getInt("wallFaceOrd").ifPresent(v -> layout.putInt("wallFaceOrd", v));
+        input.getInt("shellMinX").ifPresent(v -> layout.putInt("shellMinX", v));
+        input.getInt("shellMinY").ifPresent(v -> layout.putInt("shellMinY", v));
+        input.getInt("shellMinZ").ifPresent(v -> layout.putInt("shellMinZ", v));
+        this.cachedLayout = DataCenterShell.Layout.readLayout(layout, this.worldPosition);
     }
 
     public int getActiveSlotsMask() {
@@ -689,8 +699,8 @@ public class DataCenterTileEntity extends BlockEntity implements TickingBlockEnt
 
     private void readSelections(CompoundTag tag) {
         this.savedSelections.clear();
-        for (String s : tag.getAllKeys()) {
-            DynamicHolder<DataModel> dm = DataModelRegistry.INSTANCE.holder(ResourceLocation.tryParse(s));
+        for (String s : tag.keySet()) {
+            DynamicHolder<DataModel> dm = DataModelRegistry.INSTANCE.holder(Identifier.tryParse(s));
             Tag value = tag.get(s);
             FabSelection sel = FabSelection.CODEC.parse(NbtOps.INSTANCE, value).result().orElse(FabSelection.EMPTY);
             this.savedSelections.put(dm, sel);
@@ -698,11 +708,14 @@ public class DataCenterTileEntity extends BlockEntity implements TickingBlockEnt
     }
 
     /** 45 slots: [0..24] models, [25..28] inputs, [29..44] output buffer. */
-    public class DataCenterItemHandler extends InternalItemHandler {
+    public class DataCenterItemHandler extends MachineItemHandler {
 
         public DataCenterItemHandler() {
             super(TOTAL_SLOTS);
         }
+
+        @Override protected boolean canAutomationInsert(int slot) { return slot < OUTPUT_START; }
+        @Override protected boolean canAutomationExtract(int slot) { return slot >= INPUT_START; }
 
         @Override
         public boolean isItemValid(int slot, ItemStack stack) {

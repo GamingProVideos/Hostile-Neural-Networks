@@ -1,5 +1,6 @@
 package dev.shadowsoffire.hostilenetworks.data;
 
+import net.minecraft.world.entity.EntitySpawnReason;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
@@ -15,7 +16,6 @@ import dev.shadowsoffire.hostilenetworks.util.DataGained;
 import dev.shadowsoffire.hostilenetworks.util.DisplayData;
 import dev.shadowsoffire.hostilenetworks.util.DisplayEntity;
 import dev.shadowsoffire.hostilenetworks.util.MiscCodecs;
-import dev.shadowsoffire.hostilenetworks.util.ReflectionThings;
 import dev.shadowsoffire.hostilenetworks.util.RequiredData;
 import dev.shadowsoffire.placebo.json.OptionalStackCodec;
 import net.minecraft.ChatFormatting;
@@ -60,7 +60,7 @@ public record EntityDataModel(EntityType<?> entity, List<EntityType<?>> variants
             TextColor.CODEC.fieldOf("name_color").forGetter(EntityDataModel::nameColor),
             DisplayData.CODEC.optionalFieldOf("display", DisplayData.DEFAULT).forGetter(EntityDataModel::display),
             Codec.intRange(0, Integer.MAX_VALUE / 20).fieldOf("sim_cost").forGetter(EntityDataModel::simCost),
-            Ingredient.CODEC_NONEMPTY.fieldOf("input").forGetter(EntityDataModel::input),
+            Ingredient.CODEC.fieldOf("input").forGetter(EntityDataModel::input),
             OptionalStackCodec.INSTANCE.fieldOf("base_drop").forGetter(EntityDataModel::baseDrop),
             Codec.STRING.fieldOf("trivia").forGetter(EntityDataModel::triviaKey),
             OptionalStackCodec.INSTANCE.listOf().xmap(EntityDataModel::removeEmptyStacks, Function.identity()).fieldOf("fabricator_drops").forGetter(EntityDataModel::fabDrops),
@@ -77,7 +77,7 @@ public record EntityDataModel(EntityType<?> entity, List<EntityType<?>> variants
             ComponentSerialization.CODEC.fieldOf("name").forGetter(EntityDataModel::name),
             DisplayData.CODEC.optionalFieldOf("display", DisplayData.DEFAULT).forGetter(EntityDataModel::display),
             Codec.intRange(0, Integer.MAX_VALUE / 20).fieldOf("sim_cost").forGetter(EntityDataModel::simCost),
-            Ingredient.CODEC_NONEMPTY.fieldOf("input").forGetter(EntityDataModel::input),
+            Ingredient.CODEC.fieldOf("input").forGetter(EntityDataModel::input),
             OptionalStackCodec.INSTANCE.fieldOf("base_drop").forGetter(EntityDataModel::baseDrop),
             Codec.STRING.fieldOf("trivia").forGetter(EntityDataModel::triviaKey),
             OptionalStackCodec.INSTANCE.listOf().xmap(EntityDataModel::removeEmptyStacks, Function.identity()).fieldOf("fabricator_drops").forGetter(EntityDataModel::fabDrops),
@@ -126,11 +126,15 @@ public record EntityDataModel(EntityType<?> entity, List<EntityType<?>> variants
 
     @Override
     public List<Component> getStatistics(Level level) {
-        if (this.entity.create(level) instanceof LivingEntity living) {
+        if (this.entity.create(level, EntitySpawnReason.LOAD) instanceof LivingEntity living) {
+            var health = living.getAttribute(Attributes.MAX_HEALTH);
+            var armor = living.getAttribute(Attributes.ARMOR);
             return List.of(
-                Component.literal(String.valueOf((int) (living.getAttribute(Attributes.MAX_HEALTH).getBaseValue() / 2))),
-                Component.literal(String.valueOf((int) (living.getAttribute(Attributes.ARMOR).getBaseValue() / 2))),
-                Component.literal(String.valueOf(ReflectionThings.getBaseExperienceReward(living))));
+                Component.literal(health == null ? "?" : String.valueOf((int) (health.getBaseValue() / 2))),
+                Component.literal(armor == null ? "?" : String.valueOf((int) (armor.getBaseValue() / 2))),
+                // 26.2 computes experience with a ServerLevel and killer. There is no
+                // stable base value to query from a client-side GUI.
+                Component.literal("?"));
         }
         Component placeholder = Component.literal("99999").withStyle(ChatFormatting.OBFUSCATED);
         return List.of(placeholder, placeholder, placeholder);

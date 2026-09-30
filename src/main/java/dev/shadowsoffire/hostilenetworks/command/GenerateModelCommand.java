@@ -1,5 +1,7 @@
 package dev.shadowsoffire.hostilenetworks.command;
 
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.server.level.ServerLevel;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -37,7 +39,7 @@ import dev.shadowsoffire.hostilenetworks.util.RequiredData;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
-import net.minecraft.commands.arguments.ResourceLocationArgument;
+import net.minecraft.commands.arguments.IdentifierArgument;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
@@ -45,7 +47,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentSerialization;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.TextColor;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageTypes;
@@ -66,21 +68,21 @@ import net.neoforged.neoforge.common.conditions.ModLoadedCondition;
 
 public class GenerateModelCommand {
 
-    public static final SuggestionProvider<CommandSourceStack> SUGGEST_ENTITY_TYPE = (ctx, builder) -> SharedSuggestionProvider.suggest(BuiltInRegistries.ENTITY_TYPE.keySet().stream().map(ResourceLocation::toString), builder);
-    public static final SuggestionProvider<CommandSourceStack> SUGGEST_DATA_MODEL = (ctx, builder) -> SharedSuggestionProvider.suggest(DataModelRegistry.INSTANCE.getKeys().stream().map(ResourceLocation::toString), builder);
+    public static final SuggestionProvider<CommandSourceStack> SUGGEST_ENTITY_TYPE = (ctx, builder) -> SharedSuggestionProvider.suggest(BuiltInRegistries.ENTITY_TYPE.keySet().stream().map(Identifier::toString), builder);
+    public static final SuggestionProvider<CommandSourceStack> SUGGEST_DATA_MODEL = (ctx, builder) -> SharedSuggestionProvider.suggest(DataModelRegistry.INSTANCE.getKeys().stream().map(Identifier::toString), builder);
 
-    public static final Method dropFromLootTable = ObfuscationReflectionHelper.findMethod(LivingEntity.class, "dropFromLootTable", DamageSource.class, boolean.class);
+    public static final Method dropFromLootTable = ObfuscationReflectionHelper.findMethod(LivingEntity.class, "dropFromLootTable", ServerLevel.class, DamageSource.class, boolean.class);
     public static final MethodHandle DROP_LOOT = lootMethodHandle();
 
     private record CountedStack(ItemStack stack, AtomicInteger count) {}
 
     @SuppressWarnings({ "unchecked", "rawtypes" })
     public static void register(LiteralArgumentBuilder<CommandSourceStack> root) {
-        root.then(Commands.literal("generate_model_json").requires(c -> c.hasPermission(2))
-            .then(Commands.argument("entity_type", ResourceLocationArgument.id()).suggests(SUGGEST_ENTITY_TYPE).then(Commands.argument("max_stack_size", IntegerArgumentType.integer(1, 64)).executes(c -> {
+        root.then(Commands.literal("generate_model_json").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+            .then(Commands.argument("entity_type", IdentifierArgument.id()).suggests(SUGGEST_ENTITY_TYPE).then(Commands.argument("max_stack_size", IntegerArgumentType.integer(1, 64)).executes(c -> {
                 Player p = c.getSource().getPlayerOrException();
-                ResourceLocation name = c.getArgument("entity_type", ResourceLocation.class);
-                EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(name);
+                Identifier name = c.getArgument("entity_type", Identifier.class);
+                EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.getValue(name);
                 var results = runSimulation(type, p, 7500, c.getArgument("max_stack_size", Integer.class));
 
                 // Formatter::off
@@ -99,10 +101,10 @@ public class GenerateModelCommand {
                 return 0;
             }))));
 
-        root.then(Commands.literal("update_model_json").requires(c -> c.hasPermission(2))
-            .then(Commands.argument("data_model", ResourceLocationArgument.id()).suggests(SUGGEST_DATA_MODEL).then(Commands.argument("max_stack_size", IntegerArgumentType.integer(1, 64)).executes(c -> {
+        root.then(Commands.literal("update_model_json").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+            .then(Commands.argument("data_model", IdentifierArgument.id()).suggests(SUGGEST_DATA_MODEL).then(Commands.argument("max_stack_size", IntegerArgumentType.integer(1, 64)).executes(c -> {
                 Player p = c.getSource().getPlayerOrException();
-                ResourceLocation name = c.getArgument("data_model", ResourceLocation.class);
+                Identifier name = c.getArgument("data_model", Identifier.class);
                 EntityDataModel model = (EntityDataModel) DataModelRegistry.INSTANCE.getValue(name);
                 EntityType<?> type = model.entity();
                 var results = runSimulation(type, p, 7500, c.getArgument("max_stack_size", Integer.class));
@@ -115,11 +117,11 @@ public class GenerateModelCommand {
                 return 0;
             }))));
 
-        root.then(Commands.literal("generate_all").requires(c -> c.hasPermission(2)).then(Commands.argument("max_stack_size", IntegerArgumentType.integer(1, 64)).executes(c -> {
+        root.then(Commands.literal("generate_all").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)).then(Commands.argument("max_stack_size", IntegerArgumentType.integer(1, 64)).executes(c -> {
             Player p = c.getSource().getPlayerOrException();
             for (EntityType<?> type : BuiltInRegistries.ENTITY_TYPE) {
-                if (!(type.create(p.level()) instanceof Mob)) continue;
-                ResourceLocation name = EntityType.getKey(type);
+                if (!(type.create(p.level(), EntitySpawnReason.COMMAND) instanceof Mob)) continue;
+                Identifier name = EntityType.getKey(type);
 
                 var results = runSimulation(type, p, 7500, c.getArgument("max_stack_size", Integer.class));
 
@@ -141,10 +143,10 @@ public class GenerateModelCommand {
             return 0;
         })));
 
-        root.then(Commands.literal("datafix_all").requires(c -> c.hasPermission(2)).executes(c -> {
+        root.then(Commands.literal("datafix_all").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)).executes(c -> {
             var resman = c.getSource().getServer().getResourceManager();
-            var profiler = c.getSource().getServer().getProfiler();
-            Map<ResourceLocation, JsonElement> map = DataModelRegistry.INSTANCE.prepare(resman, profiler);
+            var profiler = net.minecraft.util.profiling.Profiler.get();
+            Map<Identifier, JsonElement> map = DataModelRegistry.INSTANCE.scanFiles(resman, profiler);
             for (var entry : map.entrySet()) {
                 try {
                     JsonObject out = new JsonObject();
@@ -299,13 +301,13 @@ public class GenerateModelCommand {
     private static List<ItemStack> runSimulation(EntityType<?> type, Player p, int runs, float maxStackSize) {
         List<ItemEntity> allDrops = new ArrayList<>();
         try {
-            Entity entity = type.create(p.level());
-            DamageSource src = new DamageSource(p.level().registryAccess().registryOrThrow(Registries.DAMAGE_TYPE).getHolderOrThrow(DamageTypes.GENERIC_KILL), p);
+            Entity entity = type.create(p.level(), EntitySpawnReason.COMMAND);
+            DamageSource src = new DamageSource(p.level().registryAccess().lookupOrThrow(Registries.DAMAGE_TYPE).getOrThrow(DamageTypes.GENERIC_KILL), p);
             for (int i = 0; i < 2500; i++) {
-                entity.moveTo(p.getX(), p.getY(), p.getZ(), 0, 0);
+                entity.setPos(p.getX(), p.getY(), p.getZ());
                 entity.hurt(src, 1);
                 entity.captureDrops(allDrops);
-                DROP_LOOT.invoke(entity, src, true);
+                DROP_LOOT.invoke(entity, (ServerLevel) p.level(), src, true);
             }
             entity.remove(RemovalReason.DISCARDED);
         }

@@ -5,7 +5,7 @@ import com.mojang.serialization.MapCodec;
 import dev.shadowsoffire.hostilenetworks.gui.DataCenterMenu;
 import dev.shadowsoffire.hostilenetworks.tile.DataCenterTileEntity;
 import dev.shadowsoffire.placebo.block_entity.TickingEntityBlock;
-import dev.shadowsoffire.placebo.menu.MenuUtil;
+import dev.shadowsoffire.hostilenetworks.gui.HostileMenuUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.Containers;
@@ -39,20 +39,7 @@ public class DataCenterBlock extends HorizontalDirectionalBlock implements Ticki
 
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-        return MenuUtil.openGui(player, pos, DataCenterMenu::new);
-    }
-
-    @Override
-    @Deprecated
-    public void onRemove(BlockState pState, Level pLevel, BlockPos pPos, BlockState pNewState, boolean pIsMoving) {
-        if (!pState.is(pNewState.getBlock())) {
-            BlockEntity te = pLevel.getBlockEntity(pPos);
-            if (te instanceof DataCenterTileEntity dc) {
-                Containers.dropContents(pLevel, pPos, dc.getInventory().getItems());
-                dc.clearPortOwnersOnBreak();
-            }
-            super.onRemove(pState, pLevel, pPos, pNewState, pIsMoving);
-        }
+        return HostileMenuUtil.openGui(player, pos, DataCenterMenu::new);
     }
 
     @Override

@@ -2,7 +2,7 @@ package dev.shadowsoffire.hostilenetworks.item;
 
 import dev.shadowsoffire.hostilenetworks.data.DataModel;
 import dev.shadowsoffire.hostilenetworks.data.DataModelRegistry;
-import dev.shadowsoffire.placebo.reload.DynamicHolder;
+import dev.shadowsoffire.placebo.dynreg.DynamicHolder;
 import dev.shadowsoffire.placebo.tabs.ITabFiller;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
@@ -25,12 +25,13 @@ public class MobPredictionItem extends Item implements ITabFiller {
             modelName = Component.literal("BROKEN").withStyle(ChatFormatting.OBFUSCATED);
         }
         else modelName = model.get().name().plainCopy();
-        return Component.translatable(this.getDescriptionId(pStack), modelName);
+        return Component.translatable(this.getDescriptionId(), modelName);
     }
 
     @Override
     public void fillItemCategory(CreativeModeTab tab, BuildCreativeModeTabContentsEvent event) {
-        DataModelRegistry.INSTANCE.getKeys().stream().sorted().map(DataModelRegistry.INSTANCE::holder).forEach(holder -> {
+        DataModelRegistry.INSTANCE.getKeys().stream().filter(id -> !id.getPath().startsWith("generated/"))
+            .sorted().map(DataModelRegistry.INSTANCE::holder).forEach(holder -> {
             ItemStack s = new ItemStack(this);
             DataModelItem.setStoredModel(s, holder);
             event.accept(s);

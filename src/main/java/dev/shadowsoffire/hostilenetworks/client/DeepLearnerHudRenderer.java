@@ -14,29 +14,30 @@ import dev.shadowsoffire.placebo.util.Offset;
 import dev.shadowsoffire.placebo.util.Offset.Box;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.LayeredDraw;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.fml.ModList;
+import net.neoforged.neoforge.client.gui.GuiLayer;
 import net.neoforged.neoforge.items.ComponentItemHandler;
 
-public class DeepLearnerHudRenderer implements LayeredDraw.Layer {
+public class DeepLearnerHudRenderer implements GuiLayer {
 
-    public static final ResourceLocation DL_HUD = HostileNetworks.loc("textures/gui/deep_learner_hud.png");
-    public static final ResourceLocation DL_HUD_BG = HostileNetworks.loc("dl_hud_bg");
+    public static final Identifier DL_HUD = HostileNetworks.loc("textures/gui/deep_learner_hud.png");
+    public static final Identifier DL_HUD_BG = HostileNetworks.loc("dl_hud_bg");
     public static final int SPACING = 28;
 
     @Override
-    public void render(GuiGraphics gfx, DeltaTracker deltaTracker) {
+    public void render(GuiGraphicsExtractor gfx, DeltaTracker deltaTracker) {
         Minecraft mc = Minecraft.getInstance();
         Player player = mc.player;
-        if (player == null || !(mc.screen instanceof ChatScreen) && mc.screen != null) return;
+        if (player == null || !(mc.gui.screen() instanceof ChatScreen) && mc.gui.screen() != null) return;
 
         // Try to resolve the deep learner from the possible slot options
         ItemStack stack = player.getMainHandItem();
@@ -64,47 +65,45 @@ public class DeepLearnerHudRenderer implements LayeredDraw.Layer {
 
         if (renderable.isEmpty() || ModelTierRegistry.INSTANCE.getValues().isEmpty()) return;
 
-        gfx.pose().pushPose();
+        gfx.pose().pushMatrix();
 
         Offset offset = HostileConfig.deepLearnerOffset;
         Box window = new Box(mc.getWindow().getGuiScaledWidth(), mc.getWindow().getGuiScaledHeight());
         Box element = new Box(119, 10 + SPACING * renderable.size());
-        offset.apply(gfx.pose(), window, element);
+        gfx.pose().translate(offset.getX(window, element), offset.getY(window, element));
 
         int x = 6;
         int y = 6;
 
-        WeirdRenderThings.TRANSLUCENT_TRANSPARENCY.setupRenderState();
         // Render the background (as a sprite for autoscaling) and the progress bars
-        gfx.blitSprite(DL_HUD_BG, 3, 3, 113, 5 + SPACING * renderable.size());
+        gfx.blitSprite(RenderPipelines.GUI_TEXTURED, DL_HUD_BG, 3, 3, 113, 5 + SPACING * renderable.size());
         for (int i = 0; i < renderable.size(); i++) {
             DataModelInstance cModel = renderable.get(i);
-            gfx.blit(DL_HUD, x + 18, y + i * SPACING + 11, 0, 0, 89, 12, 256, 256);
+            gfx.blit(RenderPipelines.GUI_TEXTURED, DL_HUD, x + 18, y + i * SPACING + 11, 0, 0, 89, 12, 256, 256);
             int width = 87;
             if (!cModel.getTier().isMax()) {
                 int prev = cModel.getTierData();
                 width = Mth.ceil(width * (cModel.getData() - prev) / (float) (cModel.getNextTierData() - prev));
             }
-            gfx.blit(DL_HUD, x + 19, y + i * SPACING + 12, 0, 12, width, 10, 256, 256);
+            gfx.blit(RenderPipelines.GUI_TEXTURED, DL_HUD, x + 19, y + i * SPACING + 12, 0, 12, width, 10, 256, 256);
         }
-        WeirdRenderThings.TRANSLUCENT_TRANSPARENCY.clearRenderState();
 
         // Then the model items
         for (int i = 0; i < renderable.size(); i++) {
             ItemStack dModel = renderable.get(i).getSourceStack();
-            gfx.renderItem(dModel, x, y + i * SPACING + 9);
+            gfx.item(dModel, x, y + i * SPACING + 9);
         }
 
         // Then all the text
         for (int i = 0; i < renderable.size(); i++) {
             DataModelInstance cModel = renderable.get(i);
             Component comp = cModel.getTier().getComponent();
-            gfx.drawString(mc.font, comp, x + 2, y + SPACING * i, 0xFFFFFF, true);
-            gfx.drawString(mc.font, Component.translatable("hostilenetworks.hud.model").withStyle(comp.getStyle()), x + mc.font.width(comp) + 2, y + SPACING * i, 0xFFFFFF, true);
-            if (!cModel.getTier().isMax()) gfx.drawString(mc.font, I18n.get("hostilenetworks.hud.kills", cModel.getActionsNeeded()), x + 21, y + 13 + i * SPACING, 0xFFFFFF, true);
+            gfx.text(mc.font, comp, x + 2, y + SPACING * i, 0xFFFFFF, true);
+            gfx.text(mc.font, Component.translatable("hostilenetworks.hud.model").withStyle(comp.getStyle()), x + mc.font.width(comp) + 2, y + SPACING * i, 0xFFFFFF, true);
+            if (!cModel.getTier().isMax()) gfx.text(mc.font, I18n.get("hostilenetworks.hud.kills", cModel.getActionsNeeded()), x + 21, y + 13 + i * SPACING, 0xFFFFFF, true);
         }
 
-        gfx.pose().popPose();
+        gfx.pose().popMatrix();
     }
 
 }

@@ -1,5 +1,7 @@
 package dev.shadowsoffire.hostilenetworks.item;
 
+import java.util.function.Consumer;
+import net.minecraft.world.item.component.TooltipDisplay;
 import java.util.List;
 
 import dev.shadowsoffire.hostilenetworks.HostileConfig;
@@ -17,13 +19,13 @@ public class BlankDataModelItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> list, TooltipFlag flag) {
+    public void appendHoverText(ItemStack stack, TooltipContext context, TooltipDisplay display, Consumer<Component> list, TooltipFlag flag) {
         if (HostileConfig.rightClickToAttune) {
-            list.add(Component.translatable("hostilenetworks.info.click_to_attune", Color.withColor("hostilenetworks.color_text.rclick", ChatFormatting.WHITE.getColor()),
-                Color.withColor("hostilenetworks.color_text.build", ChatFormatting.GOLD.getColor())).withStyle(ChatFormatting.GRAY));
+            list.accept(Component.translatable("hostilenetworks.info.click_to_attune", Color.withColor("hostilenetworks.color_text.rclick", 0xFFFFFF),
+                Color.withColor("hostilenetworks.color_text.build", 0xFFAA00)).withStyle(ChatFormatting.GRAY));
         }
         else {
-            list.add(Component.translatable("hostilenetworks.info.attunment_disabled").withStyle(ChatFormatting.GRAY));
+            list.accept(Component.translatable("hostilenetworks.info.attunment_disabled").withStyle(ChatFormatting.GRAY));
         }
     }
 

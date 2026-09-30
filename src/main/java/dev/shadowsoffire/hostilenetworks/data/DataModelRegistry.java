@@ -1,25 +1,42 @@
 package dev.shadowsoffire.hostilenetworks.data;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 import javax.annotation.Nullable;
 
 import com.google.common.collect.HashMultimap;
+import com.google.common.collect.HashBiMap;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Multimap;
 import com.google.gson.JsonElement;
 
 import dev.shadowsoffire.hostilenetworks.HostileNetworks;
+import dev.shadowsoffire.hostilenetworks.Hostile;
+import dev.shadowsoffire.hostilenetworks.HostileConfig;
+import dev.shadowsoffire.hostilenetworks.util.DataGained;
+import dev.shadowsoffire.hostilenetworks.util.DisplayData;
 import dev.shadowsoffire.hostilenetworks.util.DisplayableBlock;
-import dev.shadowsoffire.placebo.reload.DynamicRegistry;
+import dev.shadowsoffire.hostilenetworks.util.RequiredData;
+import dev.shadowsoffire.placebo.dynreg.DynamicRegistry;
+import dev.shadowsoffire.placebo.dynreg.RegistrySerializer;
+import dev.shadowsoffire.placebo.json.JsonUtil;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.network.chat.TextColor;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.level.block.Block;
+import net.neoforged.neoforge.common.conditions.ConditionalOps;
+import net.neoforged.neoforge.event.DefaultDataComponentsBoundEvent;
 
 public class DataModelRegistry extends DynamicRegistry<DataModel> {
 
@@ -27,15 +44,14 @@ public class DataModelRegistry extends DynamicRegistry<DataModel> {
 
     private Multimap<EntityType<?>, EntityDataModel> modelsByType = HashMultimap.create();
     private Multimap<Block, BlockDataModel> modelsByBlock = HashMultimap.create();
+    private volatile Map<Identifier, JsonElement> pendingFiles;
+    private ConditionalOps<JsonElement> pendingOps;
 
     public DataModelRegistry() {
-        super(HostileNetworks.LOGGER, "data_models", true, true);
-    }
-
-    @Override
-    protected void registerBuiltinCodecs() {
-        this.registerDefaultCodec(HostileNetworks.loc("entity_data_model"), EntityDataModel.CODEC);
-        this.registerCodec(HostileNetworks.loc("block_data_model"), BlockDataModel.CODEC);
+        super(HostileNetworks.LOGGER, HostileNetworks.loc("data_models"),
+            RegistrySerializer.<DataModel>subtypedSynced("data_models")
+                .registerDefault(HostileNetworks.loc("entity_data_model"), EntityDataModel.CODEC)
+                .register(HostileNetworks.loc("block_data_model"), BlockDataModel.CODEC));
     }
 
     @Override
@@ -47,9 +63,99 @@ public class DataModelRegistry extends DynamicRegistry<DataModel> {
 
     @Override
     protected void onReload(ReloadType type) {
+        if (type == ReloadType.SERVER && this.pendingFiles != null) {
+            // Minecraft 26.2 binds item default components after all reload listeners finish.
+            // Both the datapack codecs and generated models create ItemStacks, so they must
+            // be decoded in DefaultDataComponentsBoundEvent instead of this apply phase.
+            this.pendingOps = this.makeConditionalOps();
+            super.onReload(type);
+            this.modelsByType = ImmutableMultimap.copyOf(this.modelsByType);
+            this.modelsByBlock = ImmutableMultimap.copyOf(this.modelsByBlock);
+            return;
+        }
+        // Only the server generates fallback entries. Placebo syncs them like ordinary models;
+        // generating them again on the client would collide with the synced entries.
+        if (type == ReloadType.SERVER) generateFallbackModels();
         super.onReload(type);
         this.modelsByType = ImmutableMultimap.copyOf(this.modelsByType);
         this.modelsByBlock = ImmutableMultimap.copyOf(this.modelsByBlock);
+    }
+
+    public void onComponentsBound(DefaultDataComponentsBoundEvent event) {
+        if (event.getUpdateCause() != DefaultDataComponentsBoundEvent.UpdateCause.SERVER_DATA_LOAD) return;
+        Map<Identifier, JsonElement> files = this.pendingFiles;
+        if (files == null) return;
+        this.pendingFiles = null;
+        ConditionalOps<JsonElement> ops = this.pendingOps;
+        this.pendingOps = null;
+
+        // The first apply already cleared the registry. Keep the tag manager's bindings,
+        // which have been loaded by this point, and replace only the empty entry map.
+        this.registry = HashBiMap.create();
+        this.modelsByType = HashMultimap.create();
+        this.modelsByBlock = HashMultimap.create();
+        files.forEach((key, json) -> {
+            try {
+                if (JsonUtil.checkAndLogEmpty(json, key, this.id, this.logger)
+                    && JsonUtil.checkConditions(json, key, this.id, this.logger, ops)) {
+                    DataModel model = this.elementCodec().parse(ops, json.getAsJsonObject()).getOrThrow();
+                    this.register(key, model);
+                }
+            }
+            catch (Exception ex) {
+                this.logger.error("Failed parsing {} file {} after item components were bound.", this.id, key, ex);
+            }
+        });
+        this.onReload(ReloadType.SERVER);
+    }
+
+    private void generateFallbackModels() {
+        int entities = 0;
+        int blocks = 0;
+        for (EntityType<?> entity : BuiltInRegistries.ENTITY_TYPE) {
+            Identifier id = EntityType.getKey(entity);
+            // Vanilla miscellaneous entities are mostly projectiles, minecarts, and display entities.
+            // Modded types may put living mobs in MISC, so include those; the interaction
+            // handler only allows living targets to use the generated entries.
+            if (!HostileConfig.autoGenerateMobModels || !this.modelsByType.get(entity).isEmpty()
+                || ("minecraft".equals(id.getNamespace()) && entity.getCategory() == MobCategory.MISC)) continue;
+            EntityDataModel model = new EntityDataModel(entity, List.of(), Optional.empty(), TextColor.fromRgb(0x66CCFF),
+                DisplayData.DEFAULT, 256, Ingredient.of(Hostile.Items.PREDICTION_MATRIX.value()),
+                new ItemStack(Hostile.Items.OVERWORLD_PREDICTION.value()), "hostilenetworks.trivia.auto_generated",
+                List.of(new ItemStack(Items.EXPERIENCE_BOTTLE)), RequiredData.EMPTY, DataGained.EMPTY, Optional.empty());
+            try {
+                register(HostileNetworks.loc("generated/entity/" + id.getNamespace() + "/" + id.getPath()), model);
+                entities++;
+            }
+            catch (RuntimeException ex) {
+                HostileNetworks.LOGGER.warn("Unable to create fallback data model for entity {}", id, ex);
+            }
+        }
+        if (HostileConfig.autoGenerateBlockModels) {
+            for (Block block : BuiltInRegistries.BLOCK) {
+                Identifier id = BuiltInRegistries.BLOCK.getKey(block);
+                if ("minecraft".equals(id.getNamespace()) || "hostilenetworks".equals(id.getNamespace())
+                    || !this.modelsByBlock.get(block).isEmpty()) continue;
+                if (block.defaultBlockState().isAir()) continue;
+                ItemStack item = new ItemStack(block);
+                // Blocks without an item can still be attuned. The barrier is only a GUI icon;
+                // those blocks have no meaningful generic fabricator output.
+                ItemStack display = item.isEmpty() ? new ItemStack(Items.BARRIER) : item;
+                BlockDataModel model = new BlockDataModel(new DisplayableBlock(BuiltInRegistries.BLOCK.wrapAsHolder(block), display),
+                    List.of(), Optional.empty(), TextColor.fromRgb(0x66CCFF), DisplayData.DEFAULT, 256,
+                    Ingredient.of(Hostile.Items.PREDICTION_MATRIX.value()), new ItemStack(Hostile.Items.OVERWORLD_PREDICTION.value()),
+                    "hostilenetworks.trivia.auto_generated", item.isEmpty() ? List.of() : List.of(item), RequiredData.EMPTY, DataGained.EMPTY,
+                    Optional.empty(), List.of());
+                try {
+                    register(HostileNetworks.loc("generated/block/" + id.getNamespace() + "/" + id.getPath()), model);
+                    blocks++;
+                }
+                catch (RuntimeException ex) {
+                    HostileNetworks.LOGGER.warn("Unable to create fallback data model for block {}", id, ex);
+                }
+            }
+        }
+        HostileNetworks.LOGGER.info("Generated {} fallback mob models and {} fallback block models.", entities, blocks);
     }
 
     /**
@@ -60,7 +166,7 @@ public class DataModelRegistry extends DynamicRegistry<DataModel> {
      * This method places the model into the appropriate by-target lookup if it is valid.
      */
     @Override
-    protected void validateItem(ResourceLocation key, DataModel model) {
+    protected void validateItem(Identifier key, DataModel model) {
         switch (model) {
             case EntityDataModel entityModel -> validateEntity(key, entityModel);
             case BlockDataModel blockModel -> validateBlock(key, blockModel);
@@ -68,7 +174,7 @@ public class DataModelRegistry extends DynamicRegistry<DataModel> {
         }
     }
 
-    private void validateEntity(ResourceLocation key, EntityDataModel entityModel) {
+    private void validateEntity(Identifier key, EntityDataModel entityModel) {
         entityModel.entityAndVariants().forEach(type -> {
             Collection<EntityDataModel> existingModels = this.modelsByType.get(type);
             if (existingModels.isEmpty()) {
@@ -93,7 +199,7 @@ public class DataModelRegistry extends DynamicRegistry<DataModel> {
         });
     }
 
-    private void validateBlock(ResourceLocation key, BlockDataModel blockModel) {
+    private void validateBlock(Identifier key, BlockDataModel blockModel) {
         Stream<Block> blocks = Stream.concat(
             Stream.of(blockModel.block().block()),
             blockModel.variants().stream().map(DisplayableBlock::block));
@@ -129,11 +235,21 @@ public class DataModelRegistry extends DynamicRegistry<DataModel> {
     }
 
     @Override
-    public Map<ResourceLocation, JsonElement> prepare(ResourceManager pResourceManager, ProfilerFiller pProfiler) {
-        return super.prepare(pResourceManager, pProfiler);
+    public Map<Identifier, JsonElement> prepare(ResourceManager pResourceManager, ProfilerFiller pProfiler) {
+        Map<Identifier, JsonElement> files = scanFiles(pResourceManager, pProfiler);
+        this.pendingFiles = files;
+        return Map.of();
     }
 
-    private void throwAttunementError(ResourceLocation key, String targetKind, ResourceLocation targetId, Collection<? extends DataModel> existingModels) {
+    /** Returns raw model definitions without scheduling a registry reload (used by datafix_all). */
+    public Map<Identifier, JsonElement> scanFiles(ResourceManager pResourceManager, ProfilerFiller pProfiler) {
+        Map<Identifier, JsonElement> files = super.prepare(pResourceManager, pProfiler);
+        HNNRegistryResources.addLegacyFiles(files, pResourceManager, "data_models");
+        HostileNetworks.LOGGER.info("Discovered {} data model files before decoding.", files.size());
+        return files;
+    }
+
+    private void throwAttunementError(Identifier key, String targetKind, Identifier targetId, Collection<? extends DataModel> existingModels) {
         String msg = "Attempted to register multiple models for %s %s without specifying an attunement. When registering multiple models, ALL models must specify an attunement!";
         msg += " Existing models: " + existingModels.stream().map(this::getKey).toList();
         msg += " New model: " + key;

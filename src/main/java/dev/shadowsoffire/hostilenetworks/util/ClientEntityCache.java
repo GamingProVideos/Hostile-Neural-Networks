@@ -1,5 +1,8 @@
 package dev.shadowsoffire.hostilenetworks.util;
 
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.level.storage.TagValueInput;
+import net.minecraft.util.ProblemReporter;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -27,8 +30,8 @@ public class ClientEntityCache {
     public static Entity computeIfAbsent(DisplayEntity display, Level level) {
         var map = CACHE.computeIfAbsent(level, l -> new HashMap<>());
         return map.computeIfAbsent(display, k -> {
-            Entity ent = k.type().create(level);
-            ent.load(display.nbt());
+            Entity ent = k.type().create(level, EntitySpawnReason.LOAD);
+            if (ent != null) ent.load(TagValueInput.create(new ProblemReporter.Collector(), level.registryAccess(), display.nbt()));
             return ent;
         });
     }

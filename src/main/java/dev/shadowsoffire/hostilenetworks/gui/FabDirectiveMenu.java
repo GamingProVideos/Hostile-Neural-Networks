@@ -2,8 +2,7 @@ package dev.shadowsoffire.hostilenetworks.gui;
 
 import dev.shadowsoffire.hostilenetworks.Hostile;
 import dev.shadowsoffire.hostilenetworks.data.EntityDataModel;
-import dev.shadowsoffire.placebo.menu.PlaceboContainerMenu;
-import dev.shadowsoffire.placebo.reload.DynamicHolder;
+import dev.shadowsoffire.placebo.dynreg.DynamicHolder;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import net.minecraft.network.FriendlyByteBuf;
@@ -12,7 +11,7 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
-public class FabDirectiveMenu extends PlaceboContainerMenu {
+public class FabDirectiveMenu extends HostileMenu {
 
     protected final InteractionHand hand;
     protected final ItemStack fabDirective;
@@ -63,8 +62,8 @@ public class FabDirectiveMenu extends PlaceboContainerMenu {
 
     @Override
     public boolean stillValid(Player player) {
-        // TODO Auto-generated method stub
-        return false;
+        return this.fabDirective.is(Hostile.Items.FAB_DIRECTIVE)
+            && player.getItemInHand(this.hand) == this.fabDirective;
     }
 
 }

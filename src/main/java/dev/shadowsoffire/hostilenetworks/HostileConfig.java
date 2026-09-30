@@ -26,6 +26,8 @@ public class HostileConfig {
     public static boolean actionUpgradesModel;
     public static boolean continuousAccuracy;
     public static boolean enableBlockDataModels;
+    public static boolean autoGenerateMobModels;
+    public static boolean autoGenerateBlockModels;
     public static float dataCenterSimCostMultiplier;
 
     public static Offset deepLearnerOffset = new Offset(AnchorPoint.TOP_LEFT, 0, 0);
@@ -53,6 +55,10 @@ public class HostileConfig {
             "If true, the accuracy of the model increases as it gains progress towards the next tier. If false, always uses the base accuracy of the current tier.");
         enableBlockDataModels = cfg.getBoolean("Enable Block Data Models", "models", false,
             "If true, block data models (such as the built-in ore models) are loaded. This is an experimental feature. This value is not synced; it governs which models load during datapack reading.");
+        autoGenerateMobModels = cfg.getBoolean("Auto Generate Mob Models", "models", true,
+            "Create generic fallback models for mobs without a datapack model, including modded mobs. Hand-written models take priority.");
+        autoGenerateBlockModels = cfg.getBoolean("Auto Generate Modded Block Models", "models", true,
+            "Create generic fallback models for modded blocks. Blocks without an item use a barrier icon and have no generic fabricator drop. Hand-written models take priority.");
         dataCenterSimCostMultiplier = cfg.getFloat("Data Center Sim Cost Multiplier", "models", 1.5f, 0.01f, 100f,
             "Per-tick power cost the Data Center pays per active model, as a multiplier on the model's base simCost. 1.5 = 150% of normal.");
 
@@ -114,7 +120,7 @@ public class HostileConfig {
             }
 
             @Override
-            public void handle(ConfigPayload msg, IPayloadContext ctx) {
+            public void handleClient(ConfigPayload msg, IPayloadContext ctx) {
                 HostileConfig.simPowerCap = msg.simPowerCap;
                 HostileConfig.fabPowerCap = msg.fabPowerCap;
                 HostileConfig.fabPowerCost = msg.fabPowerCost;

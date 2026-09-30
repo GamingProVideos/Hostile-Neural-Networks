@@ -7,13 +7,11 @@ import dev.shadowsoffire.hostilenetworks.tile.SimChamberTileEntity.FailureState;
 import dev.shadowsoffire.hostilenetworks.tile.SimChamberTileEntity.SimItemHandler;
 import dev.shadowsoffire.hostilenetworks.tile.SimChamberTileEntity.SimMode;
 import dev.shadowsoffire.hostilenetworks.util.RedstoneState;
-import dev.shadowsoffire.placebo.menu.BlockEntityMenu;
-import dev.shadowsoffire.placebo.menu.FilteredSlot;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 
-public class SimChamberMenu extends BlockEntityMenu<SimChamberTileEntity> {
+public class SimChamberMenu extends HostileBlockEntityMenu<SimChamberTileEntity> {
 
     public SimChamberMenu(int id, Inventory pInv, BlockPos pos) {
         super(Hostile.Containers.SIM_CHAMBER, id, pInv, pos);
@@ -31,7 +29,7 @@ public class SimChamberMenu extends BlockEntityMenu<SimChamberTileEntity> {
 
     @Override
     public boolean stillValid(Player pPlayer) {
-        return pPlayer.level().getBlockState(this.pos).is(Hostile.Blocks.SIM_CHAMBER);
+        return super.stillValid(pPlayer) && pPlayer.level().getBlockState(this.pos).is(Hostile.Blocks.SIM_CHAMBER);
     }
 
     public int getEnergyStored() {

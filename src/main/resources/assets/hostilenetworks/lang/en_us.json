@@ -306,6 +306,7 @@
     "hostilenetworks.trivia.blitz": "A wind elemental\nby another name.\nFortunately, they lack control\nof thunder.",
     "hostilenetworks.trivia.blizz": "Take a Blaze\nand remove the heat.\nThe resulting husk is\nthe icy Blizz.",
 
+    "hostilenetworks.trivia.auto_generated": "Automatically generated model. Generic drops are used until a datapack supplies custom drops.",
     "hostilenetworks.info.no_base_drop": "No Base Drop Produced",
 
     "enchantment.level.0": "0",

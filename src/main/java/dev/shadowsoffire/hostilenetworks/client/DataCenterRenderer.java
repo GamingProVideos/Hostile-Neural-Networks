@@ -2,40 +2,40 @@ package dev.shadowsoffire.hostilenetworks.client;
 
 import java.util.Random;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
+import java.util.ArrayList;
+import java.util.List;
 
 import dev.shadowsoffire.hostilenetworks.data.DataModel;
 import dev.shadowsoffire.hostilenetworks.item.DataModelItem;
 import dev.shadowsoffire.hostilenetworks.multiblock.DataCenterShell;
 import dev.shadowsoffire.hostilenetworks.tile.DataCenterTileEntity;
 import dev.shadowsoffire.hostilenetworks.util.ClientEntityCache;
-import dev.shadowsoffire.hostilenetworks.util.Color;
 import dev.shadowsoffire.hostilenetworks.util.DisplayEntity;
-import dev.shadowsoffire.placebo.reload.DynamicHolder;
+import dev.shadowsoffire.placebo.dynreg.DynamicHolder;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.LevelRenderer;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
+import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
+import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.Shapes;
+import org.jspecify.annotations.Nullable;
 
-public class DataCenterRenderer implements BlockEntityRenderer<DataCenterTileEntity> {
-
-    private static final float OUTLINE_R = ((Color.AQUA >> 16) & 0xFF) / 255f;
-    private static final float OUTLINE_G = ((Color.AQUA >> 8) & 0xFF) / 255f;
-    private static final float OUTLINE_B = (Color.AQUA & 0xFF) / 255f;
-    private static final float OUTLINE_A = 1.0f;
+public class DataCenterRenderer implements BlockEntityRenderer<DataCenterTileEntity, DataCenterRenderer.State> {
 
     private static final float WORLD_SCALE_FACTOR = 1.5f;
     private static final float DISPLAY_SCALE_FACTOR = 0.55f;
@@ -47,9 +47,21 @@ public class DataCenterRenderer implements BlockEntityRenderer<DataCenterTileEnt
     private static final long SEED_MIX_SLOT = 0x9E3779B97F4A7C15L;
     private static final long SEED_MIX_CYCLE = 0xC6BC279692B5C323L;
 
-    private static final MultiBufferSource.BufferSource GHOST_BUFFER = MultiBufferSource.immediate(new ByteBufferBuilder(256));
-
     public DataCenterRenderer(BlockEntityRendererProvider.Context ctx) {}
+
+    public static final class State extends BlockEntityRenderState {
+        AABB shellBounds;
+        final List<DisplaySnapshot> displays = new ArrayList<>();
+    }
+
+    private record DisplaySnapshot(EntityRenderer<Entity, EntityRenderState> renderer, EntityRenderState state,
+                                   float x, float y, float z, float scale, float spin,
+                                   double xOffset, double yOffset, double zOffset) {}
+
+    @Override
+    public State createRenderState() {
+        return new State();
+    }
 
     @Override
     public int getViewDistance() {
@@ -66,16 +78,14 @@ public class DataCenterRenderer implements BlockEntityRenderer<DataCenterTileEnt
     }
 
     @Override
-    public void render(DataCenterTileEntity tile, float partialTick, PoseStack pose, MultiBufferSource bufs, int light, int overlay) {
+    public void extractRenderState(DataCenterTileEntity tile, State state, float partialTick, Vec3 cameraPos,
+                                   ModelFeatureRenderer.@Nullable CrumblingOverlay crumblingOverlay) {
+        BlockEntityRenderer.super.extractRenderState(tile, state, partialTick, cameraPos, crumblingOverlay);
+        state.shellBounds = null;
+        state.displays.clear();
         if (!tile.isShellValid()) return;
         DataCenterShell.Layout layout = tile.getCachedLayout();
         if (layout == null) return;
-
-        drawShellOutline(tile, layout, pose, bufs);
-        drawDisplaySlots(tile, layout, partialTick, pose);
-    }
-
-    private void drawShellOutline(DataCenterTileEntity tile, DataCenterShell.Layout layout, PoseStack pose, MultiBufferSource bufs) {
         BlockPos here = tile.getBlockPos();
         double minX = layout.shellMin().getX() - here.getX();
         double minY = layout.shellMin().getY() - here.getY();
@@ -84,12 +94,27 @@ public class DataCenterRenderer implements BlockEntityRenderer<DataCenterTileEnt
         double maxY = layout.shellMax().getY() - here.getY() + 1;
         double maxZ = layout.shellMax().getZ() - here.getZ() + 1;
 
-        VertexConsumer lines = bufs.getBuffer(RenderType.lines());
-        LevelRenderer.renderLineBox(pose, lines, minX, minY, minZ, maxX, maxY, maxZ, OUTLINE_R, OUTLINE_G, OUTLINE_B, OUTLINE_A);
+        state.shellBounds = new AABB(minX, minY, minZ, maxX, maxY, maxZ);
+        captureDisplaySlots(tile, layout, partialTick, state);
     }
 
-    @SuppressWarnings("deprecation")
-    private void drawDisplaySlots(DataCenterTileEntity tile, DataCenterShell.Layout layout, float partialTick, PoseStack pose) {
+    @Override
+    public void submit(State state, PoseStack pose, SubmitNodeCollector collector, CameraRenderState camera) {
+        if (state.shellBounds == null) return;
+        collector.submitShapeOutline(pose, Shapes.create(state.shellBounds), RenderTypes.lines(),
+            0xFF00FFFF, 1.0f, false);
+        for (DisplaySnapshot display : state.displays) {
+            pose.pushPose();
+            pose.translate(display.x, display.y, display.z);
+            pose.scale(display.scale, display.scale, display.scale);
+            pose.mulPose(Axis.YP.rotationDegrees(display.spin));
+            pose.translate(display.xOffset, display.yOffset, display.zOffset);
+            display.renderer.submit(display.state, pose, collector, camera);
+            pose.popPose();
+        }
+    }
+
+    private void captureDisplaySlots(DataCenterTileEntity tile, DataCenterShell.Layout layout, float partialTick, State state) {
         if (tile.displaySlotPositions == null) generateSlotLayout(tile);
 
         int activeMask = tile.getActiveSlotsMask();
@@ -108,26 +133,13 @@ public class DataCenterRenderer implements BlockEntityRenderer<DataCenterTileEnt
         float now = mc.level.getGameTime() + partialTick;
 
         EntityRenderDispatcher dispatcher = mc.getEntityRenderDispatcher();
-        dispatcher.setRenderShadow(false);
-        WeirdRenderThings.translucent = true;
-        try {
-            final float pt = partialTick;
-            final int finalActiveMask = activeMask;
-            RenderSystem.runAsFancy(() -> {
-                for (int i = 0; i < DataCenterTileEntity.DISPLAY_SLOT_COUNT; i++) {
-                    drawOneDisplaySlot(tile, i, finalActiveMask, now, baseSpin, cx, cy, cz, pt, pose, dispatcher, mc);
-                }
-            });
-            GHOST_BUFFER.endBatch();
-        }
-        finally {
-            WeirdRenderThings.translucent = false;
-            dispatcher.setRenderShadow(true);
+        for (int i = 0; i < DataCenterTileEntity.DISPLAY_SLOT_COUNT; i++) {
+            captureOneDisplaySlot(tile, i, activeMask, now, baseSpin, cx, cy, cz, partialTick, dispatcher, mc, state);
         }
     }
 
-    private void drawOneDisplaySlot(DataCenterTileEntity tile, int slotIdx, int activeMask, float now, float baseSpin,
-        float cx, float cy, float cz, float partialTick, PoseStack pose, EntityRenderDispatcher dispatcher, Minecraft mc) {
+    private void captureOneDisplaySlot(DataCenterTileEntity tile, int slotIdx, int activeMask, float now, float baseSpin,
+        float cx, float cy, float cz, float partialTick, EntityRenderDispatcher dispatcher, Minecraft mc, State state) {
 
         float localTime = now - tile.displaySlotPhaseOffsets[slotIdx];
         int cycleIdx = Mth.floor(localTime / CYCLE_TICKS);
@@ -164,13 +176,13 @@ public class DataCenterRenderer implements BlockEntityRenderer<DataCenterTileEnt
         float scale = WORLD_SCALE_FACTOR * DISPLAY_SCALE_FACTOR * display.scale() * envelope;
         float spin = baseSpin + (slotIdx * 360f / DataCenterTileEntity.DISPLAY_SLOT_COUNT);
 
-        pose.pushPose();
-        pose.translate(cx + off[0], cy + off[1], cz + off[2]);
-        pose.scale(scale, scale, scale);
-        pose.mulPose(Axis.YP.rotationDegrees(spin));
-        dispatcher.render(ent, display.xOffset(), display.yOffset(), display.zOffset(),
-            0f, partialTick, pose, new WrappedRTBuffer(GHOST_BUFFER), 0xF000F0);
-        pose.popPose();
+        @SuppressWarnings("unchecked")
+        EntityRenderer<Entity, EntityRenderState> renderer =
+            (EntityRenderer<Entity, EntityRenderState>) dispatcher.getRenderer(ent);
+        EntityRenderState entityState = renderer.createRenderState();
+        renderer.extractRenderState(ent, entityState, partialTick);
+        state.displays.add(new DisplaySnapshot(renderer, entityState, cx + off[0], cy + off[1], cz + off[2],
+            scale, spin, display.xOffset(), display.yOffset(), display.zOffset()));
     }
 
     private static float envelopeAt(float t) {

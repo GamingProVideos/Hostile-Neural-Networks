@@ -52,7 +52,7 @@ public class LootProvider extends LootTableProvider {
 
         @Override
         protected Iterable<Block> getKnownBlocks() {
-            return BuiltInRegistries.BLOCK.holders().filter(h -> h.getKey().location().getNamespace().equals(HostileNetworks.MODID)).map(Holder::value).toList();
+            return BuiltInRegistries.BLOCK.stream().filter(b -> BuiltInRegistries.BLOCK.getKey(b).getNamespace().equals(HostileNetworks.MODID)).toList();
         }
 
         protected void dropSelf(Holder<Block> block) {

@@ -6,7 +6,6 @@ import dev.shadowsoffire.hostilenetworks.Hostile;
 import dev.shadowsoffire.hostilenetworks.curios.CuriosCompat;
 import dev.shadowsoffire.hostilenetworks.item.DataModelItem;
 import dev.shadowsoffire.hostilenetworks.item.DeepLearnerItem;
-import dev.shadowsoffire.placebo.menu.PlaceboContainerMenu;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.Container;
 import net.minecraft.world.InteractionHand;
@@ -18,7 +17,7 @@ import net.neoforged.neoforge.items.ComponentItemHandler;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemHandlerCopySlot;
 
-public class DeepLearnerMenu extends PlaceboContainerMenu {
+public class DeepLearnerMenu extends HostileMenu {
 
     protected final DeepLearnerSource source;
     protected final Player player;
@@ -53,7 +52,7 @@ public class DeepLearnerMenu extends PlaceboContainerMenu {
         for (int row = 0; row < 9; row++) {
             int index = row;
             Slot slot = new Slot(this.player.getInventory(), index, 89 + row * 18, 211);
-            if (source == DeepLearnerSource.MAIN_HAND && index == this.player.getInventory().selected) {
+            if (source == DeepLearnerSource.MAIN_HAND && index == this.player.getInventory().getSelectedSlot()) {
                 slot = new LockedSlot(this.player.getInventory(), index, 89 + row * 18, 211);
             }
             this.addSlot(slot);

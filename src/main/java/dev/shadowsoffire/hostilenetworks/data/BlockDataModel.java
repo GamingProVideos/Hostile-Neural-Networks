@@ -20,7 +20,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentSerialization;
 import net.minecraft.network.chat.TextColor;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
@@ -51,7 +51,7 @@ public record BlockDataModel(DisplayableBlock block, List<DisplayableBlock> vari
             TextColor.CODEC.fieldOf("name_color").forGetter(BlockDataModel::nameColor),
             DisplayData.CODEC.optionalFieldOf("display", DisplayData.DEFAULT).forGetter(BlockDataModel::display),
             Codec.intRange(0, Integer.MAX_VALUE / 20).fieldOf("sim_cost").forGetter(BlockDataModel::simCost),
-            Ingredient.CODEC_NONEMPTY.fieldOf("input").forGetter(BlockDataModel::input),
+            Ingredient.CODEC.fieldOf("input").forGetter(BlockDataModel::input),
             OptionalStackCodec.INSTANCE.fieldOf("base_drop").forGetter(BlockDataModel::baseDrop),
             Codec.STRING.fieldOf("trivia").forGetter(BlockDataModel::triviaKey),
             OptionalStackCodec.INSTANCE.listOf().xmap(BlockDataModel::removeEmptyStacks, Function.identity()).fieldOf("fabricator_drops").forGetter(BlockDataModel::fabDrops),
@@ -124,7 +124,7 @@ public record BlockDataModel(DisplayableBlock block, List<DisplayableBlock> vari
      * Resolves a display name for a {@link SoundType} by deriving a translation key from its break sound's registry id.
      */
     private static Component soundTypeName(SoundType sound) {
-        ResourceLocation breakSound = BuiltInRegistries.SOUND_EVENT.getKey(sound.getBreakSound());
+        Identifier breakSound = BuiltInRegistries.SOUND_EVENT.getKey(sound.getBreakSound());
         String key = "hostilenetworks.sound_type." + breakSound.toString();
         return Component.translatable(key);
     }
@@ -163,9 +163,9 @@ public record BlockDataModel(DisplayableBlock block, List<DisplayableBlock> vari
     }
 
     private DisplayEntity createDisplayEntity(Level level, DisplayableBlock block) {
-        EntityType<?> entity = EntityType.ITEM;
+        EntityType<?> entity = BuiltInRegistries.ENTITY_TYPE.getValue(Identifier.withDefaultNamespace("item"));
         CompoundTag tag = new CompoundTag();
-        tag.put("Item", block.displayStack().save(level.registryAccess()));
+        tag.put("Item", (CompoundTag) ItemStack.CODEC.encodeStart(level.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE), block.displayStack()).getOrThrow());
         tag.merge(this.display.nbt());
         return new DisplayEntity(entity, tag, this.display.scale(), this.display.xOffset(), this.display.yOffset(), this.display.zOffset());
     }

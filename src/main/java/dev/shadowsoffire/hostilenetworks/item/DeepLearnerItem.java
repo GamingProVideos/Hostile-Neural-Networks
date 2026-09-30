@@ -1,5 +1,7 @@
 package dev.shadowsoffire.hostilenetworks.item;
 
+import java.util.function.Consumer;
+import net.minecraft.world.item.component.TooltipDisplay;
 import java.util.List;
 
 import dev.shadowsoffire.hostilenetworks.Hostile;
@@ -8,7 +10,6 @@ import dev.shadowsoffire.hostilenetworks.gui.DeepLearnerMenu.DeepLearnerSource;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -28,7 +29,7 @@ public class DeepLearnerItem extends Item {
 
     @Override
     public InteractionResult useOn(UseOnContext ctx) {
-        if (!ctx.getLevel().isClientSide) {
+        if (!ctx.getLevel().isClientSide()) {
             DeepLearnerSource src = DeepLearnerSource.fromHand(ctx.getHand());
             ctx.getPlayer().openMenu(new Provider(src), buf -> buf.writeByte(src.ordinal()));
             return InteractionResult.CONSUME;
@@ -37,15 +38,15 @@ public class DeepLearnerItem extends Item {
     }
 
     @Override
-    public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
+    public InteractionResult use(Level level, Player player, InteractionHand hand) {
         DeepLearnerSource src = DeepLearnerSource.fromHand(hand);
         player.openMenu(new Provider(src), buf -> buf.writeByte(src.ordinal()));
-        return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide);
+        return InteractionResult.SUCCESS;
     }
 
     @Override
-    public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> list, TooltipFlag flag) {
-        list.add(Component.literal("DL_INV_MARKER"));
+    public void appendHoverText(ItemStack stack, TooltipContext context, TooltipDisplay display, Consumer<Component> list, TooltipFlag flag) {
+        list.accept(Component.literal("DL_INV_MARKER"));
     }
 
     @Override

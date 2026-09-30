@@ -16,12 +16,17 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(project.properties.javaV
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {}
 
 neoForge {
-    version = project.properties.forgeVersion
+    enable {
+        version = project.properties.forgeVersion
+        disableRecompilation = true
+    }
 
-    parchment {
-        def split = "${parchmentVersion}".split('-')
-        minecraftVersion = split[1]
-        mappingsVersion = split[0]
+    if (project.hasProperty('parchmentVersion')) {
+        parchment {
+            def split = "${parchmentVersion}".split('-')
+            minecraftVersion = split[1]
+            mappingsVersion = split[0]
+        }
     }
 
     mods {
@@ -50,7 +55,7 @@ neoForge {
         }
 
         data {
-            data()
+            clientData()
             programArguments.addAll '--mod', "${modid}", '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
             ideName = "${project.name} - Data"
         }
@@ -65,6 +70,12 @@ neoForge {
 
 repositories {
     mavenLocal()
+    // Allow a locally built Placebo JAR when its Maven publication is unavailable.
+    flatDir { dirs 'libs' }
+    maven {
+        url 'https://api.modrinth.com/maven'
+        content { includeGroup 'maven.modrinth' }
+    }
     maven {
         // CurseForge
         url "https://www.cursemaven.com"
@@ -115,10 +126,11 @@ configurations {
 
 dependencies {
     if (project.mixin.toBoolean())                   annotationProcessor "org.spongepowered:mixin:${mixinVersion}:processor"
-    if (project.hasProperty('placeboVersion'))       implementation      "dev.shadowsoffire:Placebo:${mcVersion}-${placeboVersion}"
-    if (project.hasProperty('jeiVersion'))           localImplementation "mezz.jei:jei-${mcVersion}-neoforge:${jeiVersion}"
-    if (project.hasProperty('jadeVersion'))          localImplementation "snownee.jade:Jade-NeoForge:${mcVersion}-${jadeVersion}"
-    if (project.hasProperty('curiosVersion'))        implementation      "top.theillusivec4.curios:curios-neoforge:${curiosVersion}"
+    implementation files('libs/Placebo-26.2-10.0.2-26.2-port-dev.jar')
+    // Explicit 26.2 NeoForge artifacts. The integrations remain optional at runtime.
+    localImplementation 'maven.modrinth:u6dRKJwZ:DoIPjtii' // JEI 30.29.0.198
+    localImplementation 'maven.modrinth:nvQzSEkH:bYTBXC57' // Jade 26.2.8
+    localImplementation 'maven.modrinth:vvuO3ImH:BI7D0sbK' // Curios 16.0.0
     if (project.hasProperty('patchouliVersion'))     implementation      "vazkii.patchouli:Patchouli:${patchouliVersion}"
     if (project.hasProperty('bookshelfVersion'))     localImplementation "net.darkhax.bookshelf:Bookshelf-Forge-${mcVersion}:${bookshelfVersion}"
     if (project.hasProperty('gamestagesVersion'))    localImplementation "net.darkhax.gamestages:GameStages-Forge-${mcVersion}:${gamestagesVersion}"
@@ -268,7 +280,9 @@ sourceSets {
 }
 
 if (!project.enableTests.toBoolean()) {
-    sourceSets.remove(sourceSets.test)
+    // ModDevGradle expects the standard test source set during IDE/model setup.
+    // Skip test execution without removing that source set.
+    tasks.named('test', Test).configure { enabled = false }
 }
 
 tasks.named('jar', Jar).configure {
@@ -337,6 +351,8 @@ tasks.register('stockDataPack', Zip) {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+    // Show the entire migration surface in one run instead of javac's first 100 errors.
+    options.compilerArgs.addAll(['-Xmaxerrs', '1000'])
 }
 
 def getChangelogLink() {

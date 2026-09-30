@@ -12,15 +12,15 @@ import dev.shadowsoffire.hostilenetworks.data.ModelTier;
 import dev.shadowsoffire.hostilenetworks.item.DataModelItem;
 import dev.shadowsoffire.hostilenetworks.util.RedstoneState;
 import dev.shadowsoffire.placebo.block_entity.TickingBlockEntity;
-import dev.shadowsoffire.placebo.cap.InternalItemHandler;
-import dev.shadowsoffire.placebo.cap.ModifiableEnergyStorage;
+import dev.shadowsoffire.hostilenetworks.util.MachineItemHandler;
+import dev.shadowsoffire.hostilenetworks.util.ModifiableEnergyStorage;
 import dev.shadowsoffire.placebo.menu.SimpleDataSlots;
 import dev.shadowsoffire.placebo.menu.SimpleDataSlots.IDataAutoRegister;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.ByIdMap;
 import net.minecraft.util.Mth;
 import net.minecraft.world.inventory.DataSlot;
@@ -28,6 +28,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.neoforged.neoforge.energy.IEnergyStorage;
 
 public class SimChamberTileEntity extends BlockEntity implements TickingBlockEntity, IDataAutoRegister {
@@ -63,39 +65,47 @@ public class SimChamberTileEntity extends BlockEntity implements TickingBlockEnt
     }
 
     @Override
+    public void preRemoveSideEffects(BlockPos pos, BlockState state) {
+        if (this.level != null && !this.level.isClientSide()) {
+            net.minecraft.world.Containers.dropContents(this.level, pos, this.inventory.copyToList());
+        }
+        super.preRemoveSideEffects(pos, state);
+    }
+
+    @Override
     public void registerSlots(Consumer<DataSlot> consumer) {
         this.data.register(consumer);
     }
 
     @Override
-    public void saveAdditional(CompoundTag tag, HolderLookup.Provider regs) {
-        super.saveAdditional(tag, regs);
-        tag.put("inventory", this.inventory.serializeNBT(regs));
-        tag.putInt("energy", this.energy.getEnergyStored());
-        tag.putString("model", !this.currentModel.isValid() ? "null" : DataModelRegistry.INSTANCE.getKey(this.currentModel.getModel()).toString());
-        tag.putInt("runtime", this.runtime);
-        tag.putInt("predSuccess", this.predictionSuccess);
-        tag.putInt("failState", this.failState.ordinal());
-        tag.putInt("redstoneState", this.redstoneState.ordinal());
-        tag.putInt("simMode", this.mode.ordinal());
+    protected void saveAdditional(ValueOutput output) {
+        super.saveAdditional(output);
+        this.inventory.serialize(output.child("inventory"));
+        output.putInt("energy", this.energy.getEnergyStored());
+        output.putString("model", !this.currentModel.isValid() ? "null" : DataModelRegistry.INSTANCE.getKey(this.currentModel.getModel()).toString());
+        output.putInt("runtime", this.runtime);
+        output.putInt("predSuccess", this.predictionSuccess);
+        output.putInt("failState", this.failState.ordinal());
+        output.putInt("redstoneState", this.redstoneState.ordinal());
+        output.putInt("simMode", this.mode.ordinal());
     }
 
     @Override
-    public void loadAdditional(CompoundTag tag, HolderLookup.Provider regs) {
-        super.loadAdditional(tag, regs);
-        this.inventory.deserializeNBT(regs, tag.getCompound("inventory"));
-        this.energy.setEnergy(tag.getInt("energy"));
+    protected void loadAdditional(ValueInput input) {
+        super.loadAdditional(input);
+        this.inventory.deserialize(input.childOrEmpty("inventory"));
+        this.energy.setEnergy(input.getIntOr("energy", 0));
         ItemStack model = this.inventory.getStackInSlot(0);
         DataModelInstance cModel = this.getOrLoadModel(model);
-        ResourceLocation modelId = ResourceLocation.parse(tag.getString("model"));
+        Identifier modelId = Identifier.tryParse(input.getStringOr("model", ""));
         if (cModel.isValid() && DataModelRegistry.INSTANCE.getKey(cModel.getModel()).equals(modelId)) {
             this.currentModel = cModel;
         }
-        this.runtime = tag.getInt("runtime");
-        this.predictionSuccess = tag.getInt("predSuccess");
-        this.failState = FailureState.values()[tag.getInt("failState")];
-        this.redstoneState = RedstoneState.values()[tag.getInt("redstoneState")];
-        this.mode = SimMode.values()[tag.getInt("simMode")];
+        this.runtime = input.getIntOr("runtime", 0);
+        this.predictionSuccess = input.getIntOr("predSuccess", 0);
+        this.failState = FailureState.BY_ID.apply(input.getIntOr("failState", 0));
+        this.redstoneState = RedstoneState.values()[net.minecraft.util.Mth.clamp(input.getIntOr("redstoneState", 0), 0, RedstoneState.values().length - 1)];
+        this.mode = SimMode.values()[net.minecraft.util.Mth.clamp(input.getIntOr("simMode", 0), 0, SimMode.values().length - 1)];
     }
 
     @Override
@@ -122,7 +132,7 @@ public class SimChamberTileEntity extends BlockEntity implements TickingBlockEnt
                 if (this.runtime == 0) {
                     if (this.canStartSimulation()) {
                         this.runtime = this.mode.getRuntime();
-                        this.predictionSuccess = this.currentModel.rollPredictions(this.level.random);
+                        this.predictionSuccess = this.currentModel.rollPredictions(this.level.getRandom());
                         this.inventory.getStackInSlot(1).shrink(1);
                         this.setChanged();
                     }
@@ -261,6 +271,8 @@ public class SimChamberTileEntity extends BlockEntity implements TickingBlockEnt
         return energy;
     }
 
+    public ModifiableEnergyStorage getEnergyHandler() { return this.energy; }
+
     public int getEnergyStored() {
         return this.energy.getEnergyStored();
     }
@@ -294,11 +306,14 @@ public class SimChamberTileEntity extends BlockEntity implements TickingBlockEnt
         return this.mode;
     }
 
-    public class SimItemHandler extends InternalItemHandler {
+    public class SimItemHandler extends MachineItemHandler {
 
         public SimItemHandler() {
             super(4);
         }
+
+        @Override protected boolean canAutomationInsert(int slot) { return slot <= 1; }
+        @Override protected boolean canAutomationExtract(int slot) { return slot > 1; }
 
         @Override
         public boolean isItemValid(int slot, ItemStack stack) {
@@ -369,8 +384,8 @@ public class SimChamberTileEntity extends BlockEntity implements TickingBlockEnt
      */
     public enum SimMode {
 
-        INFERENCE("inference", ResourceLocation.withDefaultNamespace("textures/item/ender_eye.png"), 1.25F, 1F),
-        TRAINING("training", ResourceLocation.withDefaultNamespace("textures/item/experience_bottle.png"), 1F, 1.2F);
+        INFERENCE("inference", Identifier.withDefaultNamespace("textures/item/ender_eye.png"), 1.25F, 1F),
+        TRAINING("training", Identifier.withDefaultNamespace("textures/item/experience_bottle.png"), 1F, 1.2F);
 
         /**
          * The length of a simulation run at 100% speed, in ticks.
@@ -378,12 +393,12 @@ public class SimChamberTileEntity extends BlockEntity implements TickingBlockEnt
         public static final int BASE_RUNTIME = 300;
 
         private final String name;
-        private final ResourceLocation texture;
+        private final Identifier texture;
         private final float speedMultiplier;
         private final float costMultiplier;
         private final int runtime;
 
-        SimMode(String name, ResourceLocation texture, float speedMultiplier, float costMultiplier) {
+        SimMode(String name, Identifier texture, float speedMultiplier, float costMultiplier) {
             this.name = name;
             this.texture = texture;
             this.speedMultiplier = speedMultiplier;
@@ -417,7 +432,7 @@ public class SimChamberTileEntity extends BlockEntity implements TickingBlockEnt
             return "hostilenetworks.gui.mode." + this.name;
         }
 
-        public ResourceLocation getResourceLocation() {
+        public Identifier getResourceLocation() {
             return this.texture;
         }
 

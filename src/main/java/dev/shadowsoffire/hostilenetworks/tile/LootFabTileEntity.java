@@ -15,12 +15,12 @@ import dev.shadowsoffire.hostilenetworks.util.FabSelection;
 import dev.shadowsoffire.hostilenetworks.util.FabSelection.ProductionMode;
 import dev.shadowsoffire.hostilenetworks.util.RedstoneState;
 import dev.shadowsoffire.placebo.block_entity.TickingBlockEntity;
-import dev.shadowsoffire.placebo.cap.InternalItemHandler;
-import dev.shadowsoffire.placebo.cap.ModifiableEnergyStorage;
+import dev.shadowsoffire.hostilenetworks.util.MachineItemHandler;
+import dev.shadowsoffire.hostilenetworks.util.ModifiableEnergyStorage;
 import dev.shadowsoffire.placebo.menu.SimpleDataSlots;
 import dev.shadowsoffire.placebo.menu.SimpleDataSlots.IDataAutoRegister;
 import dev.shadowsoffire.placebo.network.VanillaPacketDispatcher;
-import dev.shadowsoffire.placebo.reload.DynamicHolder;
+import dev.shadowsoffire.placebo.dynreg.DynamicHolder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
@@ -30,13 +30,15 @@ import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.inventory.DataSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.neoforged.neoforge.energy.IEnergyStorage;
 
 public class LootFabTileEntity extends BlockEntity implements TickingBlockEntity, IDataAutoRegister {
@@ -56,6 +58,14 @@ public class LootFabTileEntity extends BlockEntity implements TickingBlockEntity
         this.data.addData(() -> this.redstoneState.ordinal(), v -> this.redstoneState = RedstoneState.values()[v]);
         this.data.addEnergy(this.energy);
         this.energy.setMaxExtract(0);
+    }
+
+    @Override
+    public void preRemoveSideEffects(BlockPos pos, BlockState state) {
+        if (this.level != null && !this.level.isClientSide()) {
+            net.minecraft.world.Containers.dropContents(this.level, pos, this.inventory.copyToList());
+        }
+        super.preRemoveSideEffects(pos, state);
     }
 
     @Override
@@ -114,6 +124,8 @@ public class LootFabTileEntity extends BlockEntity implements TickingBlockEntity
     public IEnergyStorage getEnergy() {
         return this.energy;
     }
+
+    public ModifiableEnergyStorage getEnergyHandler() { return this.energy; }
 
     public Map<DynamicHolder<DataModel>, FabSelection> getSelections() {
         return this.savedSelections;
@@ -219,25 +231,25 @@ public class LootFabTileEntity extends BlockEntity implements TickingBlockEntity
     }
 
     @Override
-    public void saveAdditional(CompoundTag tag, HolderLookup.Provider regs) {
-        super.saveAdditional(tag, regs);
-        tag.put("saved_selections", this.writeSelections(new CompoundTag()));
-        tag.put("inventory", this.inventory.serializeNBT(regs));
-        tag.putInt("energy", this.energy.getEnergyStored());
-        tag.putInt("runtime", this.runtime);
-        tag.putInt("selection", this.currentSel);
-        tag.putInt("redstoneState", this.redstoneState.ordinal());
+    protected void saveAdditional(ValueOutput output) {
+        super.saveAdditional(output);
+        output.store("saved_selections", CompoundTag.CODEC, this.writeSelections(new CompoundTag()));
+        this.inventory.serialize(output.child("inventory"));
+        output.putInt("energy", this.energy.getEnergyStored());
+        output.putInt("runtime", this.runtime);
+        output.putInt("selection", this.currentSel);
+        output.putInt("redstoneState", this.redstoneState.ordinal());
     }
 
     @Override
-    public void loadAdditional(CompoundTag tag, HolderLookup.Provider regs) {
-        super.loadAdditional(tag, regs);
-        this.readSelections(tag.getCompound("saved_selections"));
-        this.inventory.deserializeNBT(regs, tag.getCompound("inventory"));
-        this.energy.setEnergy(tag.getInt("energy"));
-        this.runtime = tag.getInt("runtime");
-        this.currentSel = tag.getInt("selection");
-        this.redstoneState = RedstoneState.values()[tag.getInt("redstoneState")];
+    protected void loadAdditional(ValueInput input) {
+        super.loadAdditional(input);
+        this.readSelections(input.read("saved_selections", CompoundTag.CODEC).orElseGet(CompoundTag::new));
+        this.inventory.deserialize(input.childOrEmpty("inventory"));
+        this.energy.setEnergy(input.getIntOr("energy", 0));
+        this.runtime = input.getIntOr("runtime", 0);
+        this.currentSel = input.getIntOr("selection", -1);
+        this.redstoneState = RedstoneState.values()[Mth.clamp(input.getIntOr("redstoneState", 0), 0, RedstoneState.values().length - 1)];
     }
 
     @Override
@@ -252,8 +264,13 @@ public class LootFabTileEntity extends BlockEntity implements TickingBlockEntity
     }
 
     @Override
-    public void onDataPacket(Connection net, ClientboundBlockEntityDataPacket pkt, HolderLookup.Provider regs) {
-        this.readSelections(pkt.getTag().getCompound("saved_selections"));
+    public void onDataPacket(Connection net, ValueInput input) {
+        this.readSelections(input.read("saved_selections", CompoundTag.CODEC).orElseGet(CompoundTag::new));
+    }
+
+    @Override
+    public void handleUpdateTag(ValueInput input) {
+        this.readSelections(input.read("saved_selections", CompoundTag.CODEC).orElseGet(CompoundTag::new));
     }
 
     @Override
@@ -273,13 +290,13 @@ public class LootFabTileEntity extends BlockEntity implements TickingBlockEntity
 
     private void readSelections(CompoundTag tag) {
         this.savedSelections.clear();
-        for (String s : tag.getAllKeys()) {
-            DynamicHolder<DataModel> dm = DataModelRegistry.INSTANCE.holder(ResourceLocation.tryParse(s));
+        for (String s : tag.keySet()) {
+            DynamicHolder<DataModel> dm = DataModelRegistry.INSTANCE.holder(Identifier.tryParse(s));
             Tag value = tag.get(s);
             FabSelection sel;
             if (value instanceof IntTag intTag) {
                 // Legacy format: a bare int index, pre-dating production modes.
-                sel = FabSelection.fixed(intTag.getAsInt());
+                sel = FabSelection.fixed(intTag.intValue());
             }
             else {
                 sel = FabSelection.CODEC.parse(NbtOps.INSTANCE, value).result().orElse(FabSelection.EMPTY);
@@ -320,11 +337,14 @@ public class LootFabTileEntity extends BlockEntity implements TickingBlockEntity
         return index;
     }
 
-    public class FabItemHandler extends InternalItemHandler {
+    public class FabItemHandler extends MachineItemHandler {
 
         public FabItemHandler() {
             super(17);
         }
+
+        @Override protected boolean canAutomationInsert(int slot) { return slot == 0; }
+        @Override protected boolean canAutomationExtract(int slot) { return slot > 0; }
 
         @Override
         public boolean isItemValid(int slot, ItemStack stack) {

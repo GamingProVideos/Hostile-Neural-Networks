@@ -1,5 +1,7 @@
 package dev.shadowsoffire.hostilenetworks.item;
 
+import java.util.function.Consumer;
+import net.minecraft.world.item.component.TooltipDisplay;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -13,7 +15,7 @@ import dev.shadowsoffire.hostilenetworks.util.FabSelection;
 import dev.shadowsoffire.hostilenetworks.util.FabSelection.ProductionMode;
 import dev.shadowsoffire.hostilenetworks.util.SavedSelections;
 import dev.shadowsoffire.placebo.PlaceboClient;
-import dev.shadowsoffire.placebo.reload.DynamicHolder;
+import dev.shadowsoffire.placebo.dynreg.DynamicHolder;
 import dev.shadowsoffire.placebo.util.SpecialTooltipItem;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.CommonComponents;
@@ -22,7 +24,6 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -49,7 +50,7 @@ public class FabDirectiveItem extends Item implements SpecialTooltipItem {
         Player player = ctx.getPlayer();
         BlockEntity be = level.getBlockEntity(ctx.getClickedPos());
         if (be instanceof LootFabTileEntity lootFab) {
-            if (level.isClientSide) {
+            if (level.isClientSide()) {
                 return InteractionResult.SUCCESS;
             }
 
@@ -76,17 +77,19 @@ public class FabDirectiveItem extends Item implements SpecialTooltipItem {
     }
 
     @Override
-    public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand usedHand) {
+    public InteractionResult use(Level level, Player player, InteractionHand usedHand) {
         // TODO: Implement FabDirectiveMenu to allow configuring on-the-fly.
         return super.use(level, player, usedHand);
     }
 
     @Override
-    public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> list, TooltipFlag flag) {
-        list.add(Component.translatable(this.getDescriptionId() + ".desc").withStyle(ChatFormatting.GRAY));
-        list.add(Component.translatable(this.getDescriptionId() + ".desc2").withStyle(ChatFormatting.GRAY));
-        if (FMLEnvironment.dist.isClient()) {
-            ClientAccess.appendHoverText(stack, context, list, flag);
+    public void appendHoverText(ItemStack stack, TooltipContext context, TooltipDisplay display, Consumer<Component> list, TooltipFlag flag) {
+        list.accept(Component.translatable(this.getDescriptionId() + ".desc").withStyle(ChatFormatting.GRAY));
+        list.accept(Component.translatable(this.getDescriptionId() + ".desc2").withStyle(ChatFormatting.GRAY));
+        if (FMLEnvironment.getDist().isClient()) {
+            List<Component> extra = new ArrayList<>();
+            ClientAccess.appendHoverText(stack, context, extra, flag);
+            extra.forEach(list);
         }
     }
 

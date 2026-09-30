@@ -1,5 +1,6 @@
 package dev.shadowsoffire.hostilenetworks.datagen;
 
+import net.minecraft.core.registries.BuiltInRegistries;
 import java.util.concurrent.CompletableFuture;
 
 import dev.shadowsoffire.hostilenetworks.Hostile;
@@ -8,7 +9,7 @@ import dev.shadowsoffire.placebo.datagen.LegacyRecipeProvider;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.PackOutput;
 import net.minecraft.data.recipes.RecipeOutput;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -18,6 +19,11 @@ public class HNNRecipeProvider extends LegacyRecipeProvider {
 
     public HNNRecipeProvider(PackOutput output, CompletableFuture<HolderLookup.Provider> registries) {
         super(output, registries, HostileNetworks.MODID);
+    }
+
+    @Override
+    public String getName() {
+        return "Hostile Neural Networks Recipes";
     }
 
     @Override
@@ -39,9 +45,9 @@ public class HNNRecipeProvider extends LegacyRecipeProvider {
             Tags.Items.INGOTS_GOLD, Items.COMPARATOR, Tags.Items.INGOTS_GOLD);
 
         this.addShaped(loc("data_center_io_port"), Hostile.Items.DATA_CENTER_IO_PORT, 3, 3,
-            Tags.Items.INGOTS_IRON, Items.BLACK_STAINED_GLASS, Tags.Items.INGOTS_IRON,
-            Items.BLACK_STAINED_GLASS, Items.REDSTONE_BLOCK, Items.BLACK_STAINED_GLASS,
-            Tags.Items.INGOTS_IRON, Items.BLACK_STAINED_GLASS, Tags.Items.INGOTS_IRON);
+            Tags.Items.INGOTS_IRON, BuiltInRegistries.ITEM.getValue(Identifier.withDefaultNamespace("black_stained_glass")), Tags.Items.INGOTS_IRON,
+            BuiltInRegistries.ITEM.getValue(Identifier.withDefaultNamespace("black_stained_glass")), Items.REDSTONE_BLOCK, BuiltInRegistries.ITEM.getValue(Identifier.withDefaultNamespace("black_stained_glass")),
+            Tags.Items.INGOTS_IRON, BuiltInRegistries.ITEM.getValue(Identifier.withDefaultNamespace("black_stained_glass")), Tags.Items.INGOTS_IRON);
 
         // --- Tools / handhelds ---
         this.addShaped(loc("framework"), Hostile.Items.BLANK_DATA_MODEL, 3, 3,
@@ -122,7 +128,7 @@ public class HNNRecipeProvider extends LegacyRecipeProvider {
             Hostile.Items.END_PREDICTION, Items.EMERALD, Items.SNOWBALL, Items.SLIME_BALL);
     }
 
-    private static ResourceLocation loc(String path) {
+    private static Identifier loc(String path) {
         return HostileNetworks.loc(path);
     }
 }

@@ -1,5 +1,6 @@
 package dev.shadowsoffire.hostilenetworks;
 
+import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,12 +25,11 @@ import dev.shadowsoffire.hostilenetworks.item.DeepLearnerItem;
 import dev.shadowsoffire.hostilenetworks.net.OpenDeepLearnerPayload;
 import dev.shadowsoffire.hostilenetworks.util.Color;
 import dev.shadowsoffire.placebo.config.Configuration;
-import dev.shadowsoffire.placebo.reload.DynamicHolder;
+import dev.shadowsoffire.placebo.dynreg.DynamicHolder;
 import dev.shadowsoffire.placebo.util.Offset;
 import dev.shadowsoffire.placebo.util.Offset.AnchorPoint;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -42,7 +42,6 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
-import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.event.RegisterClientTooltipComponentFactoriesEvent;
 import net.neoforged.neoforge.client.event.RegisterColorHandlersEvent;
@@ -56,24 +55,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 @EventBusSubscriber(value = Dist.CLIENT, modid = HostileNetworks.MODID)
 public class HostileClient {
 
-    public static final KeyMapping KEY_OPEN_DEEP_LEARNER = new KeyMapping("key.hostilenetworks.open_deep_learner", GLFW.GLFW_KEY_U, "key.categories.hostilenetworks");
-
-    @SubscribeEvent
-    public static void mrl(ModelEvent.RegisterAdditional e) {
-        e.register(ModelResourceLocation.standalone(HostileNetworks.loc("item/data_model_base")));
-    }
-
-    @SubscribeEvent
-    public static void colors(RegisterColorHandlersEvent.Item e) {
-        e.register((stack, tint) -> {
-            DynamicHolder<DataModel> model = DataModelItem.getStoredModel(stack);
-            int color = 0xFFFFFF;
-            if (model.isBound()) {
-                color = model.get().nameColor().getValue();
-            }
-            return 0xFF000000 | color;
-        }, Hostile.Items.PREDICTION.value());
-    }
+    public static final KeyMapping KEY_OPEN_DEEP_LEARNER = new KeyMapping("key.hostilenetworks.open_deep_learner", GLFW.GLFW_KEY_U, new KeyMapping.Category(HostileNetworks.loc("key_category")));
 
     @SubscribeEvent
     public static void overlays(RegisterGuiLayersEvent e) {
@@ -100,6 +82,7 @@ public class HostileClient {
 
     @SubscribeEvent
     public static void keys(RegisterKeyMappingsEvent e) {
+        e.registerCategory(KEY_OPEN_DEEP_LEARNER.getCategory());
         e.register(KEY_OPEN_DEEP_LEARNER);
     }
 
@@ -154,17 +137,8 @@ public class HostileClient {
 
     @SubscribeEvent
     public static void tick(ClientTickEvent.Post e) {
-        if (KEY_OPEN_DEEP_LEARNER.consumeClick() && Minecraft.getInstance().screen == null) {
-            PacketDistributor.sendToServer(OpenDeepLearnerPayload.INSTANCE);
-        }
-    }
-
-    @SubscribeEvent
-    public static void tooltipColors(RenderTooltipEvent.Color e) {
-        if (e.getItemStack().is(Hostile.Tags.CUSTOM_TOOLTIP_BORDER)) {
-            e.setBorderStart(0xC8000000 | Color.LIME);
-            e.setBorderEnd(0xC8000000 | Color.AQUA);
-            e.setBackground(0xF0111111);
+        if (KEY_OPEN_DEEP_LEARNER.consumeClick() && Minecraft.getInstance().gui.screen() == null) {
+            ClientPacketDistributor.sendToServer(OpenDeepLearnerPayload.INSTANCE);
         }
     }
 

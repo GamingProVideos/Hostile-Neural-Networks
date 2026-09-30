@@ -8,7 +8,7 @@ import dev.shadowsoffire.hostilenetworks.HostileNetworks;
 import dev.shadowsoffire.hostilenetworks.data.ModelTier;
 import dev.shadowsoffire.hostilenetworks.data.ModelTierRegistry;
 import dev.shadowsoffire.hostilenetworks.util.Color;
-import dev.shadowsoffire.placebo.reload.DynamicHolder;
+import dev.shadowsoffire.placebo.dynreg.DynamicHolder;
 import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
 import mezz.jei.api.gui.drawable.IDrawable;
@@ -20,16 +20,17 @@ import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 
 public class SimChamberCategory implements IRecipeCategory<TickingDataModelWrapper> {
 
     public static final RecipeType<TickingDataModelWrapper> TYPE = RecipeType.create(HostileNetworks.MODID, "sim_chamber", TickingDataModelWrapper.class);
-    public static final ResourceLocation TEXTURES = HostileNetworks.loc("textures/jei/sim_chamber.png");
+    public static final Identifier TEXTURES = HostileNetworks.loc("textures/jei/sim_chamber.png");
 
     private final IDrawable background;
     private final IDrawable icon;
@@ -47,9 +48,10 @@ public class SimChamberCategory implements IRecipeCategory<TickingDataModelWrapp
     }
 
     @Override
-    public IDrawable getBackground() {
-        return this.background;
-    }
+    public int getWidth() { return 116; }
+
+    @Override
+    public int getHeight() { return 43; }
 
     @Override
     public IDrawable getIcon() {
@@ -75,14 +77,14 @@ public class SimChamberCategory implements IRecipeCategory<TickingDataModelWrapp
     }
 
     @Override
-    public void draw(TickingDataModelWrapper recipe, IRecipeSlotsView recipeSlotsView, GuiGraphics gfx, double mouseX, double mouseY) {
+    public void draw(TickingDataModelWrapper recipe, IRecipeSlotsView recipeSlotsView, GuiGraphicsExtractor gfx, double mouseX, double mouseY) {
         Minecraft mc = Minecraft.getInstance();
         Font font = mc.font;
         long time = mc.level.getGameTime();
 
-        int width = Mth.ceil(35F * (this.ticks % 40 + mc.getTimer().getGameTimeDeltaPartialTick(true)) / 40);
+        int width = Mth.ceil(35F * (this.ticks % 40 + 0F) / 40);
 
-        gfx.blit(TEXTURES, 52, 9, 0, 43, width, 6, 256, 256);
+        gfx.blit(RenderPipelines.GUI_TEXTURED, TEXTURES, 52, 9, 0, 43, width, 6, 256, 256);
 
         if (!this.currentTier.isBound()) {
             this.currentTier = ModelTierRegistry.INSTANCE.holder(ModelTierRegistry.getMinTier());
@@ -115,11 +117,11 @@ public class SimChamberCategory implements IRecipeCategory<TickingDataModelWrapp
 
         Component comp = recipe.currentTier.getComponent();
         width = font.width(comp);
-        gfx.drawString(font, recipe.currentTier.getComponent(), 33 - width / 2, 30, recipe.currentTier.colorValue());
+        gfx.text(font, recipe.currentTier.getComponent(), 33 - width / 2, 30, recipe.currentTier.colorValue());
         DecimalFormat fmt = new DecimalFormat("##.##%");
         String msg = fmt.format(recipe.currentTier.accuracy());
         width = font.width(msg);
-        gfx.drawString(font, msg, 114 - width, 30, Color.WHITE, true);
+        gfx.text(font, msg, 114 - width, 30, Color.WHITE, true);
     }
 
 }

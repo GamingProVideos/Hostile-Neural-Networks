@@ -3,12 +3,8 @@
   "category": "misc",
   "group": "hostilenetworks",
   "key": {
-    "N": {
-      "item": "minecraft:netherrack"
-    },
-    "O": {
-      "item": "hostilenetworks:overworld_prediction"
-    }
+    "N": "minecraft:netherrack",
+    "O": "hostilenetworks:overworld_prediction"
   },
   "pattern": [
     " O ",

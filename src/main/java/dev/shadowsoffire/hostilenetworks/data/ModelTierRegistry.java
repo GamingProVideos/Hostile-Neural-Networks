@@ -4,13 +4,18 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
+import com.google.gson.JsonElement;
+import net.minecraft.server.packs.resources.ResourceManager;
+import net.minecraft.util.profiling.ProfilerFiller;
 
 import com.mojang.serialization.Codec;
 
 import dev.shadowsoffire.hostilenetworks.HostileNetworks;
-import dev.shadowsoffire.placebo.reload.DynamicHolder;
-import dev.shadowsoffire.placebo.reload.DynamicRegistry;
-import net.minecraft.resources.ResourceLocation;
+import dev.shadowsoffire.placebo.dynreg.DynamicHolder;
+import dev.shadowsoffire.placebo.dynreg.DynamicRegistry;
+import dev.shadowsoffire.placebo.dynreg.RegistrySerializer;
+import net.minecraft.resources.Identifier;
 
 public class ModelTierRegistry extends DynamicRegistry<ModelTier> {
 
@@ -22,7 +27,7 @@ public class ModelTierRegistry extends DynamicRegistry<ModelTier> {
     private LinkedList<ModelTier> sorted = new LinkedList<>();
 
     public ModelTierRegistry() {
-        super(HostileNetworks.LOGGER, "model_tiers", true, false);
+        super(HostileNetworks.LOGGER, HostileNetworks.loc("model_tiers"), RegistrySerializer.synced(ModelTier.CODEC));
     }
 
     public static ModelTier getMaxTier() {
@@ -71,6 +76,14 @@ public class ModelTierRegistry extends DynamicRegistry<ModelTier> {
     }
 
     @Override
+    protected Map<Identifier, JsonElement> prepare(ResourceManager manager, ProfilerFiller profiler) {
+        Map<Identifier, JsonElement> files = super.prepare(manager, profiler);
+        HNNRegistryResources.addLegacyFiles(files, manager, "model_tiers");
+        HostileNetworks.LOGGER.info("Discovered {} model tier files before decoding.", files.size());
+        return files;
+    }
+
+    @Override
     protected void beginReload(ReloadType type) {
         super.beginReload(type);
         this.sorted.clear();
@@ -81,6 +94,9 @@ public class ModelTierRegistry extends DynamicRegistry<ModelTier> {
         super.onReload(type);
         this.registry.values().stream().sorted(Comparator.comparing(ModelTier::requiredData)).forEach(sorted::add);
         ModelTier min = sorted.peekFirst();
+        if (min == null) {
+            throw new IllegalStateException("No model tiers loaded. Check data/hostilenetworks/model_tiers and the preceding parsing errors.");
+        }
         if (min.requiredData() != 0) {
             throw new UnsupportedOperationException("The lowest model tier must have a required data of zero. Currently, the lowest model tier is %s - %s".formatted(this.getKey(min), min));
         }
@@ -101,19 +117,14 @@ public class ModelTierRegistry extends DynamicRegistry<ModelTier> {
     }
 
     @Override
-    protected void registerBuiltinCodecs() {
-        this.registerDefaultCodec(HostileNetworks.loc("model_tier"), ModelTier.CODEC);
-    }
-
-    @Override
-    protected void validateItem(ResourceLocation key, ModelTier value) {
+    protected void validateItem(Identifier key, ModelTier value) {
         if (!HostileNetworks.MODID.equals(key.getNamespace())) {
             throw new UnsupportedOperationException("Model Tiers must be registered under the `hostilenetworks` namespace.");
         }
     }
 
     public static Codec<DynamicHolder<ModelTier>> tierHolderCodec() {
-        return Codec.STRING.xmap(HostileNetworks::loc, ResourceLocation::getPath).xmap(ModelTierRegistry.INSTANCE::holder, DynamicHolder::getId);
+        return Codec.STRING.xmap(HostileNetworks::loc, Identifier::getPath).xmap(ModelTierRegistry.INSTANCE::holder, DynamicHolder::getId);
     }
 
 }

@@ -12,16 +12,17 @@ import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 
 public class LootFabCategory implements IRecipeCategory<LootFabRecipe> {
 
     public static final RecipeType<LootFabRecipe> TYPE = RecipeType.create(HostileNetworks.MODID, "loot_fabricator", LootFabRecipe.class);
-    public static final ResourceLocation TEXTURES = HostileNetworks.loc("textures/jei/loot_fabricator.png");
+    public static final Identifier TEXTURES = HostileNetworks.loc("textures/jei/loot_fabricator.png");
 
     private final IDrawable background;
     private final IDrawable icon;
@@ -37,9 +38,10 @@ public class LootFabCategory implements IRecipeCategory<LootFabRecipe> {
     }
 
     @Override
-    public IDrawable getBackground() {
-        return this.background;
-    }
+    public int getWidth() { return 103; }
+
+    @Override
+    public int getHeight() { return 30; }
 
     @Override
     public IDrawable getIcon() {
@@ -63,11 +65,11 @@ public class LootFabCategory implements IRecipeCategory<LootFabRecipe> {
     }
 
     @Override
-    public void draw(LootFabRecipe recipe, IRecipeSlotsView recipeSlotsView, GuiGraphics gfx, double mouseX, double mouseY) {
+    public void draw(LootFabRecipe recipe, IRecipeSlotsView recipeSlotsView, GuiGraphicsExtractor gfx, double mouseX, double mouseY) {
         Minecraft mc = Minecraft.getInstance();
         long time = mc.level.getGameTime();
-        int width = Mth.ceil(36F * (this.ticks % 40 + mc.getTimer().getGameTimeDeltaPartialTick(true)) / 40);
-        gfx.blit(TEXTURES, 34, 12, 0, 30, width, 6, 256, 256);
+        int width = Mth.ceil(36F * (this.ticks % 40 + 0F) / 40);
+        gfx.blit(RenderPipelines.GUI_TEXTURED, TEXTURES, 34, 12, 0, 30, width, 6, 256, 256);
         if (time != this.lastTickTime) {
             ++this.ticks;
             this.lastTickTime = time;
